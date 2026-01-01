@@ -1627,8 +1627,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'help') {
                 const embed = new EmbedBuilder()
-                    .setTitle("🤖 Bot Commands")
-                    .setDescription("Here are all available commands and how to use them:")
+                    .setTitle("♟️ The Ultimate Chess & Sports Companion")
+                    .setDescription("Master the board and test your sports knowledge! Earn coins, climb the leaderboards, and unlock exclusive server roles.")
                     .addFields(
                         { 
                             name: '💎 Economy & Daily', 
