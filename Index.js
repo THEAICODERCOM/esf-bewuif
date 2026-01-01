@@ -45,6 +45,7 @@ db.serialize(() => {
 // DB Helpers
 // ---------------------------
 const dbAll = (sql, params = []) => new Promise((res, rej) => db.all(sql, params, (e, r) => e ? rej(e) : res(r)));
+const dbRun = (sql, params = []) => new Promise((res, rej) => db.run(sql, params, function(e) { e ? rej(e) : res(this); }));
 
 const getUserData = userId => new Promise((res, rej) => {
     db.get('SELECT coins, lastDaily FROM users WHERE userId = ?', [userId], (e, r) => {
@@ -159,87 +160,6 @@ const isCloseEnough = (u, a) => {
 };
 
 const STOP_WORDS = new Set(['the','a','an','on','of','to','with','in','at','by','for','and','or','from','into','onto','over','under']);
-const SYN_MAP = {
-    "queenside": ["queen","side"],
-    "queen's": ["queen"],
-    "queens": ["queen"],
-    "kingside": ["king","side"],
-    "king's": ["king"],
-    "kings": ["king"],
-    "backrank": ["back","rank"],
-    "fianchetto": ["fianchetto"],
-    "enpassant": ["en","passant"],
-    "en": ["en"],
-    "passant": ["passant"],
-    "castle": ["castling"],
-    "o-o-o": ["castling","queen","side"],
-    "o-o": ["castling","king","side"],
-    "mate": ["checkmate"],
-    "promotion": ["promotion","promote"],
-    "promote": ["promotion"],
-    "battery": ["battery","double"],
-    "double": ["double"],
-    "forking": ["fork"],
-    "fork": ["fork"],
-    "skewer": ["skewer"],
-    "pin": ["pin"],
-    "zugzwang": ["zugzwang"],
-    "zwischenzug": ["zwischenzug","intermediate"],
-    "intermediate": ["zwischenzug"],
-    "gambit": ["gambit"],
-    "declined": ["declined"],
-    "accepted": ["accepted"],
-    "defense": ["defense"],
-    "attack": ["attack"],
-    "break": ["break"],
-    "pawn": ["pawn"],
-    "rank": ["rank"],
-    "file": ["file"],
-    "queen": ["queen"],
-    "king": ["king"],
-    "rook": ["rook"],
-    "bishop": ["bishop"],
-    "knight": ["knight"]
-};
-
-const canonTokens = (s) => {
-    if (!s) return new Set();
-    s = String(s).toLowerCase().replace(/[^a-z0-9\s\-']/g, ' ');
-    s = s.replace(/-/g, ' ');
-    s = s.replace(/'/g, '');
-    const raw = s.split(/\s+/).filter(Boolean);
-    let tokens = [];
-    for (const t of raw) {
-        if (STOP_WORDS.has(t)) continue;
-        if (SYN_MAP[t]) tokens.push(...SYN_MAP[t]);
-        else tokens.push(t);
-    }
-    const out = new Set(tokens.filter(x => !STOP_WORDS.has(x)));
-    return out;
-};
-
-const subsetMatch = (a, b) => {
-    for (const t of a) { if (!b.has(t)) return false; }
-    return true;
-};
-
-const isAnswerMatch = (input, q) => {
-    const inSet = canonTokens(input);
-    const ansSet = canonTokens(q.answer);
-    if (subsetMatch(ansSet, inSet)) return true;
-    if (Array.isArray(q.aliases)) {
-        for (const al of q.aliases) {
-            const alSet = canonTokens(al);
-            if (subsetMatch(alSet, inSet)) return true;
-        }
-    }
-    if (ansSet.size === 1) {
-        if (isCloseEnough(input, q.answer)) return true;
-        if (Array.isArray(q.aliases) && q.aliases.some(a => isCloseEnough(input, a))) return true;
-    }
-    return false;
-};
-
 const nameTokens = s => {
     s = String(s || "").toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     s = s.replace(/[^a-z0-9\s]/g, ' ');
@@ -1515,7 +1435,7 @@ client.on(Events.InteractionCreate, async interaction => {
     try {
             if (interaction.isAutocomplete()) {
                 const focusedValue = interaction.options.getFocused();
-                const shopItems = await ServerShop.find({ guildId: interaction.guild.id });
+                const shopItems = await dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [interaction.guild.id]);
                 const filtered = shopItems
                     .filter(item => item.itemName.toLowerCase().includes(focusedValue.toLowerCase()))
                     .map(item => ({ name: item.itemName, value: item.itemName }));
@@ -1642,7 +1562,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             if (customId.startsWith('shop_buy:')) {
                 const itemName = customId.split(':')[1];
-                const item = await ServerShop.findOne({ guildId: guild.id, itemName });
+                const item = (await dbAll('SELECT * FROM server_shop WHERE guildId = ? AND itemName = ?', [guild.id, itemName]))[0];
                 if (!item) { await interaction.followUp({ content: "Item no longer exists in the shop.", ephemeral: true }); return; }
                 
                 const member = await guild.members.fetch(user.id);
@@ -1658,6 +1578,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 
                 const newMember = await guild.members.fetch(user.id);
                 const newData = await getServerUserData(guild.id, user.id);
+                const shopItems = await dbAll('SELECT * FROM server_shop WHERE guildId = ? ORDER BY price ASC', [guild.id]);
                 
                 const fields = shopItems.map(s => {
                     const sRole = guild.roles.cache.get(s.roleId);
@@ -1832,7 +1753,42 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (row && (Date.now() - row.lastUsed < cooldownTime)) {
                     const diff = cooldownTime - (Date.now() - row.lastUsed);
                     const s = Math.ceil(diff / 1000);
-                    return interaction.editReply(`⏳ Cooldown! Try again in ${s}s.`);
+                    const embed = new EmbedBuilder()
+                        .setTitle("⏳ Recharge Required")
+                        .setDescription(`Your tactical vision is recharging. Try again in **${s}s**.`)
+                        .setColor(0xE74C3C);
+                    return interaction.editReply({ embeds: [embed] });
+                }
+
+                const active = await getGuessActive(user.id);
+                if (active) {
+                    const entry = PLAYERS.find(p => p.name === active.playerName);
+                    if (entry) {
+                        const idx = Math.max(1, active.hintIndex);
+                        const shown = entry.hints.slice(0, idx).map((h, i) => `**Hint ${i+1}:** ${h}`).join('\n');
+                        const data = await getServerUserData(guild.id, user.id);
+                        
+                        const embed = new EmbedBuilder()
+                            .setAuthor({ name: "🕵️ Intelligence Report" })
+                            .setTitle("Guess the Grandmaster")
+                            .setDescription(`You have an active mission!\n\n${shown}`)
+                            .setColor(0x8E44AD)
+                            .addFields(
+                                { name: '💰 Cost', value: 'Next hint: `5 coins`', inline: true },
+                                { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
+                            )
+                            .setFooter({ text: "Use /guess to submit your answer" });
+                        
+                        const label = idx >= entry.hints.length ? 'All Intel Gathered' : `Next Hint (5 Coins)`;
+                        const rowComp = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('guess_next')
+                                .setLabel(label)
+                                .setStyle(idx >= entry.hints.length ? ButtonStyle.Secondary : ButtonStyle.Primary)
+                                .setDisabled(idx >= entry.hints.length)
+                        );
+                        return interaction.editReply({ embeds: [embed], components: [rowComp] });
+                    }
                 }
                 
                 const filteredPlayers = PLAYERS.filter(p => p.type === type);
@@ -1844,10 +1800,16 @@ client.on(Events.InteractionCreate, async interaction => {
                 await setGuessActive(user.id, p.name);
                 await setGuessCooldown(user.id);
 
+                const data = await getServerUserData(guild.id, user.id);
                 const embed = new EmbedBuilder()
-                    .setTitle(`🕵️ Guess the ${type.charAt(0).toUpperCase() + type.slice(1)} Player`)
-                    .setDescription(`Hint 1: ${p.hints[0]}`)
+                    .setAuthor({ name: "🕵️ Intelligence Report" })
+                    .setTitle(`Guess the ${type.charAt(0).toUpperCase() + type.slice(1)} Player`)
+                    .setDescription(`**Hint 1:** ${p.hints[0]}`)
                     .setColor(0x8E44AD)
+                    .addFields(
+                        { name: '💰 Cost', value: 'Next hint: `5 coins`', inline: true },
+                        { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
+                    )
                     .setFooter({ text: "Use /guess to answer • Hints cost 5 coins" });
 
                 const rowBtn = new ActionRowBuilder().addComponents(
@@ -1869,7 +1831,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     return interaction.editReply({ embeds: [embed] });
                 }
                 await addUserCoins(user.id, 25, guild.id);
-                await User.updateOne({ userId: user.id }, { lastDaily: Date.now() });
+                await dbRun('UPDATE users SET lastDaily = ? WHERE userId = ?', [Date.now(), user.id]);
                 const embed = new EmbedBuilder()
                     .setTitle("🎁 Daily Allowance")
                     .setDescription("Your daily stipend has been deposited into your treasury.")
@@ -1921,65 +1883,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setFooter({ text: `Scope: ${scope.charAt(0).toUpperCase() + scope.slice(1)} • Updated just now` })
                     .setTimestamp();
                 return interaction.editReply({ embeds: [embed] });
-            }
-
-            if (commandName === 'guesstheplayer') {
-                if (!PLAYERS.length) return interaction.editReply("❌ Player list is unavailable.");
-                const row = await getGuessCooldown(user.id);
-                const cooldownTime = 10 * 60 * 1000;
-                if (row && (Date.now() - row.lastUsed < cooldownTime)) {
-                    const diff = cooldownTime - (Date.now() - row.lastUsed);
-                    const m = Math.floor(diff / 60000);
-                    const s = Math.floor((diff % 60000) / 1000);
-                    const embed = new EmbedBuilder()
-                        .setTitle("⏳ Recharge Required")
-                        .setDescription(`Your tactical vision is recharging. Try again in **${m}m ${s}s**.`)
-                        .setColor(0xE74C3C)
-                        .setThumbnail('https://cdn-icons-png.flaticon.com/512/2088/2088617.png');
-                    return interaction.editReply({ embeds: [embed] });
-                }
-                const data = await getServerUserData(guild.id, user.id);
-                const active = await getGuessActive(user.id);
-                if (active) {
-                    const entry = PLAYERS.find(p => p.name === active.playerName);
-                    const idx = Math.max(1, active.hintIndex);
-                    const shown = entry ? entry.hints.slice(0, idx).map((h, i) => `**Hint ${i+1}:** ${h}`).join('\n') : "No hints available.";
-                    const embed = new EmbedBuilder()
-                        .setAuthor({ name: "🕵️ Intelligence Report" })
-                        .setTitle("Guess the Grandmaster")
-                        .setDescription(shown)
-                        .setColor(0x8E44AD)
-                        .addFields({ name: '💰 Cost', value: 'Next hint: `5 coins`', inline: true }, { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true })
-                        .setFooter({ text: "Use /guess to submit your answer" });
-                    
-                    const label = idx >= entry.hints.length ? 'All Intel Gathered' : `Next Hint (5 Coins)`;
-                    const rowComp = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('guess_next')
-                            .setLabel(label)
-                            .setStyle(idx >= entry.hints.length ? ButtonStyle.Secondary : ButtonStyle.Primary)
-                            .setDisabled(idx >= entry.hints.length)
-                    );
-                    return interaction.editReply({ embeds: [embed], components: [rowComp] });
-                }
-                const entry = PLAYERS[Math.floor(Math.random() * PLAYERS.length)];
-                await setGuessActive(user.id, entry.name);
-                const first = entry.hints[0] || "No hint.";
-                const embed = new EmbedBuilder()
-                    .setAuthor({ name: "🕵️ Intelligence Report" })
-                    .setTitle("Guess the Grandmaster")
-                    .setDescription(`**Hint 1:** ${first}`)
-                    .setColor(0x9B59B6)
-                    .addFields({ name: '💰 Cost', value: 'Next hint: `5 coins`', inline: true }, { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true })
-                    .setFooter({ text: "First hint is free! Use /guess to answer." });
-
-                const rowComp = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('guess_next')
-                        .setLabel('Next Hint (5 Coins)')
-                        .setStyle(ButtonStyle.Primary)
-                );
-                return interaction.editReply({ embeds: [embed], components: [rowComp] });
             }
 
             if (commandName === 'guess') {
