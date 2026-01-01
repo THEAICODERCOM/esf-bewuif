@@ -21,7 +21,7 @@ try {
 // Client & Database
 // ---------------------------
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
-const dbPath = path.join(__dirname, 'data.sqlite');
+const dbPath = path.join(__dirname, '..', 'data.sqlite');
 const db = new sqlite3.Database(dbPath);
 db.configure('busyTimeout', 5000);
 
