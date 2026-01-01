@@ -1901,9 +1901,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 const scope = options.getString('scope') || 'server';
                 let rows;
                 if (scope === 'server' && guild) {
-                    rows = await ServerCoin.find({ guildId: guild.id }).sort({ coins: -1 }).limit(10);
+                    rows = await dbAll('SELECT userId, coins FROM server_coins WHERE guildId = ? ORDER BY coins DESC LIMIT 10', [guild.id]);
                 } else {
-                    rows = await User.find().sort({ coins: -1 }).limit(10);
+                    rows = await dbAll('SELECT userId, coins FROM users ORDER BY coins DESC LIMIT 10');
                 }
                 const medals = ['🥇','🥈','🥉'];
                 const txt = rows.map((r, i) => {
