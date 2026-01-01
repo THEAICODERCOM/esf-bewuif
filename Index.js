@@ -869,7 +869,7 @@ Graceful attacking midfielder
 Liverpool's legendary captain
 Inspired the "Miracle of Istanbul"
 Known for powerful long-range goals
-One of the best box-toof-box midfielders
+One of the best box-to-box midfielders
 Played his entire career for one club (mostly)
 26. Frank Lampard
 Chelsea's all-time leading scorer as a midfielder
@@ -1406,6 +1406,10 @@ client.once(Events.ClientReady, async () => {
                 name: 'shop-delete-all',
                 description: 'Delete all items from the server shop (Admins only)',
                 default_member_permissions: ADMIN_PERMS.toString()
+            },
+            {
+                name: 'admin-backup',
+                description: 'Generates recovery commands for coins and shop (Owner only)'
             },
             { 
                 name: 'quiz', 
@@ -2237,6 +2241,51 @@ client.on(Events.InteractionCreate, async interaction => {
                         return interaction.editReply({ embeds: [embed] });
                     }
                 }
+            }
+
+            if (commandName === 'admin-backup') {
+                if (user.id !== '1324354578338025533') {
+                    return interaction.editReply({ content: "❌ This is a restricted owner command.", ephemeral: true });
+                }
+
+                const serverCoins = await dbAll('SELECT * FROM server_coins WHERE guildId = ?', [guild.id]);
+                const shopItems = await dbAll('SELECT * FROM server_shop WHERE guildId = ?', [guild.id]);
+
+                let output = "**Database Backup (Copy these if you reset)**\n\n";
+                
+                output += "__**Coins Recovery Commands:**__\n";
+                if (serverCoins.length === 0) {
+                    output += "*No user balances found.*\n";
+                } else {
+                    for (const row of serverCoins) {
+                        if (row.coins > 0) {
+                            output += `\`/addmoney user:${row.userId} amount:${row.coins}\` (User: <@${row.userId}>)\n`;
+                        }
+                    }
+                }
+
+                output += "\n__**Shop Recovery Commands:**__\n";
+                if (shopItems.length === 0) {
+                    output += "*No shop items found.*\n";
+                } else {
+                    for (const item of shopItems) {
+                        output += `\`/item create name:${item.itemName} role:${item.roleId} price:${item.price}\` (Role: <@&${item.roleId}>)\n`;
+                    }
+                }
+
+                if (output.length > 1900) {
+                    return interaction.editReply({ content: "⚠️ Backup too large for a single message. Please check the database manually if possible." });
+                }
+
+                const embed = new EmbedBuilder()
+                    .setAuthor({ name: "🛡️ Owner Security Tool" })
+                    .setTitle("Manual Data Backup")
+                    .setDescription(output)
+                    .setColor(0x9B59B6)
+                    .setFooter({ text: "Use these commands to restore data after a reset." })
+                    .setTimestamp();
+                
+                return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'addmoney') {
