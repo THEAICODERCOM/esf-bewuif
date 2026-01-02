@@ -1757,13 +1757,13 @@ client.on(Events.InteractionCreate, async interaction => {
                     }
                     const cost = upgradeData.levels[nextLevel].cost;
 
-                    const userData = await getUserData(user.id);
-                    if (userData.coins < cost) {
+                    const serverData = await getServerUserData(guild.id, user.id);
+                    if (serverData.coins < cost) {
                         return interaction.editReply({ content: "❌ You can no longer afford this upgrade!", embeds: [], components: [] });
                     }
 
                     // Deduct coins and update level
-                    await dbRun('UPDATE users SET coins = coins - ? WHERE userId = ?', [cost, user.id]);
+                    await dbRun('UPDATE server_coins SET coins = coins - ? WHERE guildId = ? AND userId = ?', [cost, guild.id, user.id]);
                     await dbRun(`UPDATE user_upgrades SET ${upgradeKey} = ? WHERE userId = ?`, [nextLevel, user.id]);
 
                     const successEmbed = new EmbedBuilder()
@@ -2052,7 +2052,7 @@ client.on(Events.InteractionCreate, async interaction => {
             if (commandName === 'upgrade') {
                 const sub = options.getSubcommand(false);
                 const upgrades = await getUserUpgrades(user.id);
-                const userData = await getUserData(user.id);
+                const serverData = await getServerUserData(guild.id, user.id);
 
                 if (!sub) {
                     const dailyLevel = upgrades ? (upgrades.daily_boost || 0) : 0;
@@ -2067,7 +2067,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "🛠️ Tactical Upgrade Center" })
                         .setTitle("Current Upgrades & Statistics")
-                        .setDescription("Invest your global coins for permanent, powerful advantages in the field. Maximize your efficiency and income!")
+                        .setDescription("Invest your server coins for permanent, powerful advantages in the field. Maximize your efficiency and income!")
                         .addFields(
                             { 
                                 name: "💰 Daily Income Boost", 
@@ -2085,8 +2085,8 @@ client.on(Events.InteractionCreate, async interaction => {
                                 inline: true 
                             },
                             { 
-                                name: "Your Global Balance", 
-                                value: `💰 \`${userData.coins}\` coins`, 
+                                name: "Your Server Balance", 
+                                value: `💰 \`${serverData.coins}\` coins`, 
                                 inline: false 
                             }
                         )
@@ -2123,8 +2123,8 @@ client.on(Events.InteractionCreate, async interaction => {
                         .addFields(
                             { name: "Current Level", value: `Level ${currentLevel}/5 (+${currentTier.effect} benefit)`, inline: true },
                             { name: "Next Level", value: `Level ${nextLevel}/5 (+${nextTier.effect} benefit total)`, inline: true },
-                            { name: "Cost", value: `💰 \`${cost}\` Global Coins`, inline: true },
-                            { name: "Your Balance", value: `💰 \`${userData.coins}\` coins`, inline: false }
+                            { name: "Cost", value: `💰 \`${cost}\` Server Coins`, inline: true },
+                            { name: "Your Balance", value: `💰 \`${serverData.coins}\` coins`, inline: false }
                         )
                         .setColor(0x2ECC71);
 
@@ -2132,7 +2132,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setCustomId(`upgrade_confirm_${upgradeKey}_${nextLevel}_${user.id}`)
                         .setLabel("Buy Upgrade")
                         .setStyle(ButtonStyle.Success)
-                        .setDisabled(userData.coins < cost);
+                        .setDisabled(serverData.coins < cost);
 
                     const cancelBtn = new ButtonBuilder()
                         .setCustomId(`upgrade_cancel_${user.id}`)
