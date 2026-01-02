@@ -1282,62 +1282,62 @@ loadPlayers();
 client.once(Events.ClientReady, async () => {
     try {
         await client.application.commands.set([
-            { name: 'daily', description: 'Claim your daily 25 coins' },
-            { name: 'balance', description: 'Check coins', options: [{ name: 'user', description: 'User to check', type: ApplicationCommandOptionType.User, required: false }] },
-            { name: 'leaderboard', description: 'Top 10 players', options: [{ name: 'scope', description: 'Leaderboard scope', type: ApplicationCommandOptionType.String, required: false, choices: [{ name: 'Global', value: 'global' }, { name: 'Server', value: 'server' }] }] },
-            { name: 'shop', description: 'View server shop' },
+            { name: 'daily', description: 'Claim your daily stipend (25 coins)' },
+            { name: 'balance', description: 'Check your or another player\'s treasury balance', options: [{ name: 'user', description: 'User to check', type: ApplicationCommandOptionType.User, required: false }] },
+            { name: 'leaderboard', description: 'View the top strategists (Global or Server)', options: [{ name: 'scope', description: 'Leaderboard scope', type: ApplicationCommandOptionType.String, required: false, choices: [{ name: 'Global', value: 'global' }, { name: 'Server', value: 'server' }] }] },
+            { name: 'shop', description: 'Browse the server\'s elite items and roles' },
             { 
                 name: 'item', 
-                description: 'Manage shop items',
+                description: 'Manage the server shop (Admins only)',
                 default_member_permissions: ADMIN_PERMS.toString(),
                 options: [
                     {
                         name: 'create',
-                        description: 'Create a new shop item',
+                        description: 'Forge a new shop item',
                         type: ApplicationCommandOptionType.Subcommand,
                         options: [
-                            { name: 'name', description: 'Item name', type: ApplicationCommandOptionType.String, required: true },
-                            { name: 'role', description: 'Role to assign', type: ApplicationCommandOptionType.Role, required: true },
-                            { name: 'price', description: 'Price in coins', type: ApplicationCommandOptionType.Integer, required: true }
+                            { name: 'name', description: 'Name of the item', type: ApplicationCommandOptionType.String, required: true },
+                            { name: 'role', description: 'Role to award', type: ApplicationCommandOptionType.Role, required: true },
+                            { name: 'price', description: 'Cost in coins', type: ApplicationCommandOptionType.Integer, required: true }
                         ]
                     },
                     {
                         name: 'edit',
-                        description: 'Edit an existing shop item (Admins only)',
+                        description: 'Modify an existing shop item',
                         type: ApplicationCommandOptionType.Subcommand,
                         options: [
-                            { name: 'name', description: 'The current name of the item to edit', type: ApplicationCommandOptionType.String, required: true, autocomplete: true },
-                            { name: 'new_name', description: 'New name for the item', type: ApplicationCommandOptionType.String, required: false },
-                            { name: 'price', description: 'New price for the item', type: ApplicationCommandOptionType.Integer, required: false },
-                            { name: 'role', description: 'New role for the item', type: ApplicationCommandOptionType.Role, required: false }
+                            { name: 'name', description: 'Item to edit', type: ApplicationCommandOptionType.String, required: true, autocomplete: true },
+                            { name: 'new_name', description: 'New name', type: ApplicationCommandOptionType.String, required: false },
+                            { name: 'price', description: 'New price', type: ApplicationCommandOptionType.Integer, required: false },
+                            { name: 'role', description: 'New role', type: ApplicationCommandOptionType.Role, required: false }
                         ]
                     },
                     {
                         name: 'delete',
-                        description: 'Delete an item or the entire shop (Admins only)',
+                        description: 'Remove an item from the shop',
                         type: ApplicationCommandOptionType.Subcommand,
                         options: [
-                            { name: 'name', description: 'Item name to delete, or type "all" to clear the shop', type: ApplicationCommandOptionType.String, required: true, autocomplete: true }
+                            { name: 'name', description: 'Item to delete (type "all" for full wipe)', type: ApplicationCommandOptionType.String, required: true, autocomplete: true }
                         ]
                     }
                 ]
             },
             {
                 name: 'shop-delete-all',
-                description: 'Delete all items from the server shop (Admins only)',
+                description: 'Nuke the entire server shop (Admins only)',
                 default_member_permissions: ADMIN_PERMS.toString()
             },
             {
                 name: 'admin-backup',
-                description: 'Generates recovery commands for coins and shop (Owner only)'
+                description: 'Generate recovery protocols (Owner only)'
             },
             { 
                 name: 'quiz', 
-                description: 'Get a question (5m cooldown)',
+                description: 'Test your knowledge for rewards (30s cooldown)',
                 options: [
                     {
                         name: 'type',
-                        description: 'Category of the quiz',
+                        description: 'Category: Chess, Football, or Basketball',
                         type: ApplicationCommandOptionType.String,
                         required: true,
                         choices: [
@@ -1350,11 +1350,11 @@ client.once(Events.ClientReady, async () => {
             },
             { 
                 name: 'guesstheplayer', 
-                description: 'Start Guess the Player (1m cooldown, hints cost 5 coins)',
+                description: 'Identify the mystery player (1m cooldown)',
                 options: [
                     {
                         name: 'type',
-                        description: 'Category of the player',
+                        description: 'Category: Chess, Football, or Basketball',
                         type: ApplicationCommandOptionType.String,
                         required: true,
                         choices: [
@@ -1365,12 +1365,12 @@ client.once(Events.ClientReady, async () => {
                     }
                 ]
             },
-            { name: 'guess', description: 'Submit your player guess', options: [{ name: 'name', description: 'Player name', type: ApplicationCommandOptionType.String, required: true }] },
-            { name: 'ration', description: 'Show your quiz stats' },
-            { name: 'questions', description: 'Admin: View quiz questions', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'page', description: 'Page number (1-15)', type: ApplicationCommandOptionType.Integer, required: false }] },
-            { name: 'addmoney', description: 'Admin: Add coins', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'User to give coins', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount of coins to add', type: ApplicationCommandOptionType.Integer, required: true }] },
-            { name: 'removemoney', description: 'Admin: Remove coins', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'User to remove coins', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount of coins to remove', type: ApplicationCommandOptionType.Integer, required: true }] },
-            { name: 'help', description: 'Display all commands and how to use them' }
+            { name: 'guess', description: 'Submit your intel on the mystery player', options: [{ name: 'name', description: 'Name of the player', type: ApplicationCommandOptionType.String, required: true }] },
+            { name: 'ration', description: 'View your tactical performance stats' },
+            { name: 'questions', description: 'Review the grandmaster question bank (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'page', description: 'Bank page', type: ApplicationCommandOptionType.Integer, required: false }] },
+            { name: 'addmoney', description: 'Deposit coins into a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Recipient', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to deposit', type: ApplicationCommandOptionType.Integer, required: true }] },
+            { name: 'removemoney', description: 'Confiscate coins from a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Target', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to seize', type: ApplicationCommandOptionType.Integer, required: true }] },
+            { name: 'help', description: 'The ultimate guide to dominating the server' }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
     } catch (error) {
@@ -1383,7 +1383,7 @@ client.on(Events.MessageCreate, async message => {
     if (message.mentions.has(client.user) && !message.mentions.everyone) {
         const embed = new EmbedBuilder()
             .setTitle("🤖 Bot Commands")
-            .setDescription("Here are all available commands and how to use them:")
+            .setDescription("Yo! Here is how you can use the @Quiz Bot to get rich and flex on others:")
             .addFields(
                 { 
                     name: '💎 Economy & Daily', 
@@ -1391,7 +1391,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
-                    value: '`/quiz <type>` - Start a quiz (Chess, Football, Basketball). 1m to answer, 5m cooldown\n`/answer <text>` - Submit your answer to the active quiz\n`/guesstheplayer <type>` - Start "Guess the Player". Hints cost 5 coins, 10m cooldown\n`/guess <name>` - Submit your player guess\n`/ration` - View your quiz accuracy and statistics' 
+                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/guesstheplayer <type>` - Start "Guess the Player" (1m cooldown)\n`/guess <name>` - Submit your player guess\n`/ration` - View your quiz accuracy and statistics' 
                 },
                 { 
                     name: '🛒 Server Shop', 
@@ -1403,7 +1403,7 @@ client.on(Events.MessageCreate, async message => {
                 }
             )
             .setColor(0x3498DB)
-            .setFooter({ text: "Tip: Use /help for this menu anytime!" })
+            .setFooter({ text: "Tip: Use /help for the full guide!" })
             .setTimestamp();
         
         await message.reply({ embeds: [embed] }).catch(() => {});
@@ -1627,28 +1627,32 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'help') {
                 const embed = new EmbedBuilder()
-                    .setTitle("♟️ The Ultimate Chess & Sports Companion")
+                    .setTitle("Yo! So this is how to use the @Quiz Bot")
                     .setDescription("Master the board and test your sports knowledge! Earn coins, climb the leaderboards, and unlock exclusive server roles.")
                     .addFields(
                         { 
-                            name: '💎 Economy & Daily', 
-                            value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope]` - View top players (Global or Server)' 
+                            name: '1️⃣ What is it?', 
+                            value: "It's like a mix of a Quiz knowledge and an economy system where you can earn coins and buy roles." 
                         },
                         { 
-                            name: '🎮 Games & Quizzes', 
-                            value: '`/quiz <type>` - Start a multiple-choice quiz. 1m to answer, 30s cooldown\n`/guesstheplayer <type>` - Start "Guess the Player". Hints cost 5 coins, 1m cooldown\n`/guess <name>` - Submit your player guess\n`/ration` - View your quiz accuracy and statistics' 
+                            name: '2️⃣ How to use it / Get rich?', 
+                            value: "• `/daily`: Use this every day to get free coins. It's literally free money, don't forget it.\n• `/quiz <type>`: Get one of 150+ unique questions to answer in 60s. Solve correctly and get coins. Choose between **Chess**, **Football**, or **Basketball**! (30s cooldown)\n• `/guesstheplayer <type>`: The bot gives you hints about a famous player. First hint is free, others cost 5 coins. (1m cooldown)\n• `/guess <name>`: Use this to submit your answer for the \"Guess the Player\" game.\n• `/ration`: See how many quiz questions you've actually gotten right." 
                         },
                         { 
-                            name: '🛒 Server Shop', 
-                            value: '`/shop` - View items available in this server\'s shop\n`/item buy <name>` - Purchase a role from the shop' 
+                            name: '🛒 Spending Your Cash', 
+                            value: "But after having Money what are you gonna do with it?\n• `/shop`: Check out what you can buy. Usually, it's cool roles like \"Chess Master\" or \"Chess GOAT.\"\n• `/balance [user]`: Check how many coins you or another user actually have so you know if you're broke or not." 
                         },
                         { 
-                            name: '🛠️ Admin Commands', 
-                            value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View all quiz questions' 
+                            name: '🏆 Competitive Aspects', 
+                            value: "• `/leaderboard scope`: See who the richest players in the Global or Server boards are. Try to get to the top!" 
+                        },
+                        { 
+                            name: '🛠️ Admin Stuff (If you have permissions)', 
+                            value: "• `/addmoney <user> <amount>`: Give someone coins (or yourself, lol).\n• `/removemoney <user> <amount>`: Take coins away if someone is being annoying.\n• `/questions [page]`: See all the questions there are.\n• `/item create <name> <role> <price>`: Create an item for the shop (up to 10).\n• `/item edit <name>`: Edit a created item.\n• `/item delete <name>`: Delete a created item from the shop.\n• `/shop-delete-all`: Simply delete the entire shop." 
                         }
                     )
                     .setColor(0x3498DB)
-                    .setFooter({ text: "Tip: You can also ping the bot to see this menu!" })
+                    .setFooter({ text: "Basically, just spam /daily and /quiz to get coins, then flex on everyone with a cool role!" })
                     .setTimestamp();
                 return interaction.editReply({ embeds: [embed] });
             }
