@@ -40,6 +40,27 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS server_coins (guildId TEXT NOT NULL, userId TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guildId, userId))');
     db.run('CREATE TABLE IF NOT EXISTS server_shop (guildId TEXT NOT NULL, itemName TEXT NOT NULL, roleId TEXT NOT NULL, price INTEGER NOT NULL, PRIMARY KEY (guildId, itemName))');
     db.run('CREATE TABLE IF NOT EXISTS user_upgrades (userId TEXT PRIMARY KEY, daily_boost INTEGER DEFAULT 0, cooldown_reduction INTEGER DEFAULT 0, hint_discount INTEGER DEFAULT 0)');
+
+    // Migration: Ensure all columns exist in all tables
+    const migrations = [
+        { table: 'users', columns: ['streak', 'lastDaily'] },
+        { table: 'user_upgrades', columns: ['daily_boost', 'cooldown_reduction', 'hint_discount'] }
+    ];
+
+    migrations.forEach(m => {
+        db.all(`PRAGMA table_info(${m.table})`, (err, rows) => {
+            if (err || !rows) return;
+            const existing = rows.map(r => r.name);
+            m.columns.forEach(col => {
+                if (!existing.includes(col)) {
+                    db.run(`ALTER TABLE ${m.table} ADD COLUMN ${col} INTEGER DEFAULT 0`, (e) => {
+                        if (e) console.error(`Migration error adding ${col} to ${m.table}:`, e);
+                        else console.log(`Migration: Added column ${col} to ${m.table}`);
+                    });
+                }
+            });
+        });
+    });
 });
 
 // ---------------------------
@@ -1731,6 +1752,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     const upgradeKey = key;
                     const nextLevel = parseInt(level);
                     const upgradeData = UPGRADE_TIERS[upgradeKey];
+                    if (!upgradeData || !upgradeData.levels[nextLevel]) {
+                        return interaction.editReply({ content: "❌ Error: Invalid upgrade data.", embeds: [], components: [] });
+                    }
                     const cost = upgradeData.levels[nextLevel].cost;
 
                     const userData = await getUserData(user.id);
@@ -1925,7 +1949,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 
                 // Hint cost: 5 coins base, minus upgrades
                 const upgrades = await getUserUpgrades(user.id);
-                const discount = UPGRADE_TIERS.hint_discount.levels[upgrades ? upgrades.hint_discount : 0].effect;
+                const currentHintDiscountLevel = upgrades ? (upgrades.hint_discount || 0) : 0;
+                const discount = UPGRADE_TIERS.hint_discount.levels[currentHintDiscountLevel] ? UPGRADE_TIERS.hint_discount.levels[currentHintDiscountLevel].effect : 0;
                 const HINT_COST = Math.max(0, 5 - discount);
 
                 const data = await getServerUserData(guild.id, user.id);
@@ -2030,6 +2055,15 @@ client.on(Events.InteractionCreate, async interaction => {
                 const userData = await getUserData(user.id);
 
                 if (!sub) {
+                    const dailyLevel = upgrades ? (upgrades.daily_boost || 0) : 0;
+                    const dailyEffect = UPGRADE_TIERS.daily_boost.levels[dailyLevel] ? UPGRADE_TIERS.daily_boost.levels[dailyLevel].effect : 0;
+
+                    const cooldownLevel = upgrades ? (upgrades.cooldown_reduction || 0) : 0;
+                    const cooldownEffect = UPGRADE_TIERS.cooldown_reduction.levels[cooldownLevel] ? UPGRADE_TIERS.cooldown_reduction.levels[cooldownLevel].effect : 0;
+
+                    const hintLevel = upgrades ? (upgrades.hint_discount || 0) : 0;
+                    const hintEffect = UPGRADE_TIERS.hint_discount.levels[hintLevel] ? UPGRADE_TIERS.hint_discount.levels[hintLevel].effect : 0;
+
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "🛠️ Tactical Upgrade Center" })
                         .setTitle("Current Upgrades & Statistics")
@@ -2037,17 +2071,17 @@ client.on(Events.InteractionCreate, async interaction => {
                         .addFields(
                             { 
                                 name: "💰 Daily Income Boost", 
-                                value: `Level ${upgrades.daily_boost}/5 (+${UPGRADE_TIERS.daily_boost.levels[upgrades.daily_boost].effect} coins)`, 
+                                value: `Level ${dailyLevel}/5 (+${dailyEffect} coins)`, 
                                 inline: true 
                             },
                             { 
                                 name: "⏱️ Cooldown Reduction", 
-                                value: `Level ${upgrades.cooldown_reduction}/5 (Current: ${30 - UPGRADE_TIERS.cooldown_reduction.levels[upgrades.cooldown_reduction].effect}s)`, 
+                                value: `Level ${cooldownLevel}/5 (Current: ${30 - cooldownEffect}s)`, 
                                 inline: true 
                             },
                             { 
                                 name: "🕵️ Hint Discount", 
-                                value: `Level ${upgrades.hint_discount}/5 (-${UPGRADE_TIERS.hint_discount.levels[upgrades.hint_discount].effect} coin cost)`, 
+                                value: `Level ${hintLevel}/5 (-${hintEffect} coin cost)`, 
                                 inline: true 
                             },
                             { 
@@ -2064,7 +2098,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (sub === 'buy') {
                     const upgradeKey = options.getString('name');
-                    const currentLevel = upgrades[upgradeKey];
+                    const currentLevel = upgrades ? (upgrades[upgradeKey] || 0) : 0;
                     const nextLevel = currentLevel + 1;
 
                     if (nextLevel > 5) {
@@ -2072,14 +2106,22 @@ client.on(Events.InteractionCreate, async interaction => {
                     }
 
                     const upgradeData = UPGRADE_TIERS[upgradeKey];
+                    if (!upgradeData) return interaction.editReply({ content: "❌ Invalid upgrade category." });
+
                     const nextTier = upgradeData.levels[nextLevel];
+                    const currentTier = upgradeData.levels[currentLevel];
+                    
+                    if (!nextTier || !currentTier) {
+                        return interaction.editReply({ content: "❌ Error accessing upgrade tiers." });
+                    }
+
                     const cost = nextTier.cost;
 
                     const embed = new EmbedBuilder()
                         .setTitle(`⬆️ Upgrading ${upgradeData.name}`)
                         .setDescription("Are you sure you want to purchase the next tier?")
                         .addFields(
-                            { name: "Current Level", value: `Level ${currentLevel}/5 (+${upgradeData.levels[currentLevel].effect} benefit)`, inline: true },
+                            { name: "Current Level", value: `Level ${currentLevel}/5 (+${currentTier.effect} benefit)`, inline: true },
                             { name: "Next Level", value: `Level ${nextLevel}/5 (+${nextTier.effect} benefit total)`, inline: true },
                             { name: "Cost", value: `💰 \`${cost}\` Global Coins`, inline: true },
                             { name: "Your Balance", value: `💰 \`${userData.coins}\` coins`, inline: false }
@@ -2105,27 +2147,28 @@ client.on(Events.InteractionCreate, async interaction => {
             if (commandName === 'help') {
                 const embed = new EmbedBuilder()
                     .setTitle("🤖 Ultimate Guide to @Quiz Bot")
-                    .setDescription("Master Chess, dominate the sports trivia, and flex your wealth on the leaderboards!")
+                    .setDescription("Master standard chess terminology, dominate sports trivia, and climb the global leaderboards!")
                     .addFields(
                         { 
-                            name: '💎 Getting Rich (Economy)', 
-                            value: "• `/daily`: Claim free coins every day. The more days you come back, the bigger your **streak bonus**!\n• `/gift <user> <amount>`: Send some of your coins to a friend.\n• `/balance [user]`: Check how much money you or someone else has." 
+                            name: '💎 Economy & Wealth', 
+                            value: "• `/daily`: Claim your daily allowance. (Streak bonus included!)\n• `/gift <user> <amount>`: Transfer global coins to an ally.\n• `/balance [user]`: Check your Global and Server-specific vaults." 
                         },
                         { 
-                            name: '🎮 Games & Quizzes', 
-                            value: "• `/quiz <type>`: 300+ questions (60s limit). Correct answers = Coins! (30s cooldown)\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery pro. Hints cost 5 coins.\n• `/guess <name>`: Submit your answer for Guess the Pro.\n• `/ration`: View your total quiz accuracy and stats." 
+                            name: '🎮 Tactical Games', 
+                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
                         },
                         { 
-                            name: '🏆 Competition & Shop', 
-                            value: "• `/leaderboard`: View top players by **Wealth** or **Intelligence** (Global/Server).\n• `/shop`: Buy exclusive roles with your hard-earned coins!\n• `/upgrade`: Permanent boosts for Daily, Cooldowns, and Hints!" 
+                            name: '🏆 Progression & Shop', 
+                            value: "• `/upgrade`: Invest in permanent boosts (Daily Income, Cooldowns, Hints)!\n• `/shop`: Buy exclusive roles with your hard-earned coins!\n• `/leaderboard`: View the elite players by Wealth or Intelligence." 
                         },
                         { 
-                            name: '🛠️ Admin Commands', 
-                            value: "• `/addmoney`: Deposit coins to a user.\n• `/removemoney`: Seize coins from a user.\n• `/item`: Create/Edit/Delete shop items.\n• `/questions`: View the full question bank." 
+                            name: '🛠️ Command & Control (Admins)', 
+                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only)." 
                         }
                     )
                     .setColor(0x3498DB)
-                    .setFooter({ text: "Pro tip: Keep your streak alive for maximum daily rewards!" })
+                    .setThumbnail(client.user.displayAvatarURL())
+                    .setFooter({ text: "Tactical Tip: Use /upgrade to permanently reduce your quiz cooldowns!" })
                     .setTimestamp();
                 return interaction.editReply({ embeds: [embed] });
             }
@@ -2164,7 +2207,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
                 const row = await getCooldown(user.id);
                 const upgrades = await getUserUpgrades(user.id);
-                const reduction = UPGRADE_TIERS.cooldown_reduction.levels[upgrades ? upgrades.cooldown_reduction : 0].effect;
+                const currentReductionLevel = upgrades ? (upgrades.cooldown_reduction || 0) : 0;
+                const reduction = UPGRADE_TIERS.cooldown_reduction.levels[currentReductionLevel] ? UPGRADE_TIERS.cooldown_reduction.levels[currentReductionLevel].effect : 0;
                 const cooldownTime = (30 - reduction) * 1000; // 30 seconds base
                 if (row && (Date.now() - row.lastUsed < cooldownTime)) {
                     const diff = cooldownTime - (Date.now() - row.lastUsed);
@@ -2241,7 +2285,8 @@ client.on(Events.InteractionCreate, async interaction => {
                         const data = await getServerUserData(guild.id, user.id);
                         
                         const upgrades = await getUserUpgrades(user.id);
-                        const discount = UPGRADE_TIERS.hint_discount.levels[upgrades ? upgrades.hint_discount : 0].effect;
+                        const currentDiscountLevel = upgrades ? (upgrades.hint_discount || 0) : 0;
+                        const discount = UPGRADE_TIERS.hint_discount.levels[currentDiscountLevel] ? UPGRADE_TIERS.hint_discount.levels[currentDiscountLevel].effect : 0;
                         const hintCost = Math.max(0, 5 - discount);
 
                         const embed = new EmbedBuilder()
@@ -2317,7 +2362,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 const upgrades = await getUserUpgrades(user.id);
-                const upgradeBonus = UPGRADE_TIERS.daily_boost.levels[upgrades ? upgrades.daily_boost : 0].effect;
+                const currentLevel = upgrades ? (upgrades.daily_boost || 0) : 0;
+                const upgradeBonus = UPGRADE_TIERS.daily_boost.levels[currentLevel] ? UPGRADE_TIERS.daily_boost.levels[currentLevel].effect : 0;
                 const baseReward = 25;
                 const streakBonus = Math.min((newStreak - 1) * 5, 50); // Max 50 bonus
                 const totalReward = baseReward + streakBonus + upgradeBonus;
@@ -2393,13 +2439,15 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'balance') {
                 const target = options.getUser('user') || user;
-                const data = await getServerUserData(guild.id, target.id);
+                const serverData = await getServerUserData(guild.id, target.id);
+                const globalData = await getUserData(target.id);
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: target.tag, iconURL: target.displayAvatarURL({ dynamic: true }) })
                     .setTitle("💰 Treasury Report")
                     .setDescription(`**${target.username}** currently holds:`)
                     .addFields(
-                        { name: '🪙 Server Coins', value: `\`${data.coins.toLocaleString()}\``, inline: true }
+                        { name: '🪙 Server Coins', value: `\`${serverData.coins.toLocaleString()}\``, inline: true },
+                        { name: '🌍 Global Coins', value: `\`${globalData.coins.toLocaleString()}\``, inline: true }
                     )
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/272/272525.png')
                     .setColor(0xF1C40F)
@@ -2704,6 +2752,51 @@ client.on(Events.InteractionCreate, async interaction => {
                         return interaction.editReply({ embeds: [embed] });
                     }
                 }
+            }
+
+            if (commandName === 'admin-backup') {
+                if (user.id !== '1324354578338025533') {
+                    return interaction.editReply({ content: "❌ This is a restricted owner command.", ephemeral: true });
+                }
+
+                const serverCoins = await dbAll('SELECT * FROM server_coins WHERE guildId = ?', [guild.id]);
+                const shopItems = await dbAll('SELECT * FROM server_shop WHERE guildId = ?', [guild.id]);
+
+                let output = "**Database Backup (Copy these if you reset)**\n\n";
+                
+                output += "__**Coins Recovery Commands:**__\n";
+                if (serverCoins.length === 0) {
+                    output += "*No user balances found.*\n";
+                } else {
+                    for (const row of serverCoins) {
+                        if (row.coins > 0) {
+                            output += `\`/addmoney user:${row.userId} amount:${row.coins}\` (User: <@${row.userId}>)\n`;
+                        }
+                    }
+                }
+
+                output += "\n__**Shop Recovery Commands:**__\n";
+                if (shopItems.length === 0) {
+                    output += "*No shop items found.*\n";
+                } else {
+                    for (const item of shopItems) {
+                        output += `\`/item create name:${item.itemName} role:${item.roleId} price:${item.price}\` (Role: <@&${item.roleId}>)\n`;
+                    }
+                }
+
+                if (output.length > 1900) {
+                    return interaction.editReply({ content: "⚠️ Backup too large for a single message. Please check the database manually if possible." });
+                }
+
+                const embed = new EmbedBuilder()
+                    .setAuthor({ name: "🛡️ Owner Security Tool" })
+                    .setTitle("Manual Data Backup")
+                    .setDescription(output)
+                    .setColor(0x9B59B6)
+                    .setFooter({ text: "Use these commands to restore data after a reset." })
+                    .setTimestamp();
+                
+                return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'admin-backup') {
