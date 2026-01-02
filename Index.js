@@ -22,10 +22,59 @@ try {
 // ---------------------------
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 const dbPath = path.join(__dirname, '..', 'data.sqlite');
-const db = new sqlite3.Database(dbPath);
+
+// Function to handle database corruption
+function handleDatabaseCorruption() {
+    console.error("⚠️ CRITICAL: Database corruption detected! Attempting recovery...");
+    const timestamp = Date.now();
+    const backupPath = `${dbPath}.corrupt.${timestamp}`;
+    
+    try {
+        if (fs.existsSync(dbPath)) {
+            fs.renameSync(dbPath, backupPath);
+            console.log(`✅ Corrupted database moved to: ${backupPath}`);
+        }
+    } catch (e) {
+        console.error("❌ Failed to move corrupted database:", e);
+    }
+}
+
+let db;
+try {
+    db = new sqlite3.Database(dbPath, (err) => {
+        if (err && err.message.includes('SQLITE_CORRUPT')) {
+            handleDatabaseCorruption();
+            db = new sqlite3.Database(dbPath);
+        }
+    });
+} catch (e) {
+    handleDatabaseCorruption();
+    db = new sqlite3.Database(dbPath);
+}
+
 db.configure('busyTimeout', 5000);
 
+// Add error listener for runtime corruption
+db.on('error', (err) => {
+    if (err && err.message.includes('SQLITE_CORRUPT')) {
+        console.error("⚠️ Runtime Database Corruption Detected!");
+        // We can't easily recover mid-runtime without restarting, 
+        // but we can log it and exit to let the process manager (pm2/etc) restart us
+        handleDatabaseCorruption();
+        process.exit(1);
+    }
+});
+
 db.serialize(() => {
+    // Initial Integrity Check
+    db.get('PRAGMA integrity_check', (err, row) => {
+        if (err || (row && row.integrity_check !== 'ok')) {
+            handleDatabaseCorruption();
+            // Force a restart to re-initialize everything safely
+            process.exit(1);
+        }
+    });
+
     db.run('PRAGMA journal_mode = WAL;');
     db.run('PRAGMA synchronous = NORMAL;');
 
@@ -102,120 +151,121 @@ const UPGRADE_TIERS = {
     }
 };
 
-const getUserUpgrades = userId => new Promise((res, rej) => {
-    db.get('SELECT daily_boost, cooldown_reduction, hint_discount FROM user_upgrades WHERE userId = ?', [userId], (e, r) => {
-        if (e) rej(e);
-        else if (!r) {
-            db.run('INSERT OR IGNORE INTO user_upgrades (userId, daily_boost, cooldown_reduction, hint_discount) VALUES (?, 0, 0, 0)', [userId], () => res({ daily_boost: 0, cooldown_reduction: 0, hint_discount: 0 }));
-        } else res(r);
-    });
-});
-
 // ---------------------------
 // DB Helpers
 // ---------------------------
-const dbAll = (sql, params = []) => new Promise((res, rej) => db.all(sql, params, (e, r) => e ? rej(e) : res(r)));
-const dbRun = (sql, params = []) => new Promise((res, rej) => db.run(sql, params, function(e) { e ? rej(e) : res(this); }));
+const checkCorrupt = (err) => {
+    if (err && err.message.includes('SQLITE_CORRUPT')) {
+        handleDatabaseCorruption();
+        // Exit so process manager can restart with fresh DB
+        process.exit(1);
+    }
+    return err;
+};
+
+const dbAll = (sql, params = []) => new Promise((res, rej) => db.all(sql, params, (e, r) => {
+    if (e) {
+        checkCorrupt(e);
+        rej(e);
+    } else res(r);
+}));
+
+const dbRun = (sql, params = []) => new Promise((res, rej) => db.run(sql, params, function(e) {
+    if (e) {
+        checkCorrupt(e);
+        rej(e);
+    } else res(this);
+}));
+
+const dbGet = (sql, params = []) => new Promise((res, rej) => db.get(sql, params, (e, r) => {
+    if (e) {
+        checkCorrupt(e);
+        rej(e);
+    } else res(r);
+}));
+
+const getUserUpgrades = async (userId) => {
+    let r = await dbGet('SELECT daily_boost, cooldown_reduction, hint_discount FROM user_upgrades WHERE userId = ?', [userId]);
+    if (!r) {
+        await dbRun('INSERT OR IGNORE INTO user_upgrades (userId, daily_boost, cooldown_reduction, hint_discount) VALUES (?, 0, 0, 0)', [userId]);
+        return { daily_boost: 0, cooldown_reduction: 0, hint_discount: 0 };
+    }
+    return r;
+};
 
 const CHALLENGES = new Map();
 
-const getUserData = userId => new Promise((res, rej) => {
-    db.get('SELECT coins, lastDaily, streak FROM users WHERE userId = ?', [userId], (e, r) => {
-        if (e) rej(e);
-        else if (!r) {
-            db.run('INSERT OR IGNORE INTO users (userId, coins, lastDaily, streak) VALUES (?,0,0,0)', [userId], () => res({ coins: 0, lastDaily: 0, streak: 0 }));
-        } else res(r);
-    });
-});
+const getUserData = async (userId) => {
+    let r = await dbGet('SELECT coins, lastDaily, streak FROM users WHERE userId = ?', [userId]);
+    if (!r) {
+        await dbRun('INSERT OR IGNORE INTO users (userId, coins, lastDaily, streak) VALUES (?,0,0,0)', [userId]);
+        return { coins: 0, lastDaily: 0, streak: 0 };
+    }
+    return r;
+};
 
-const addUserCoins = (userId, amount, guildId = null) => new Promise((res, rej) => {
+const addUserCoins = async (userId, amount, guildId = null) => {
     // Always update global coins
-    db.run('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId], err => {
-        if (err) return rej(err);
-        db.run('UPDATE users SET coins = coins + ? WHERE userId = ?', [amount, userId], e => {
-            if (e) return rej(e);
-            // If guildId is provided, also update server-specific coins
-            if (guildId) {
-                db.run('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId], err2 => {
-                    if (err2) return rej(err2);
-                    db.run('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [amount, guildId, userId], e2 => e2 ? rej(e2) : res());
-                });
-            } else {
-                res();
-            }
-        });
-    });
-});
+    await dbRun('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId]);
+    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [amount, userId]);
+    
+    // If guildId is provided, also update server-specific coins
+    if (guildId) {
+        await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
+        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [amount, guildId, userId]);
+    }
+};
 
-const getServerUserData = (guildId, userId) => new Promise((res, rej) => {
-    db.get('SELECT coins FROM server_coins WHERE guildId = ? AND userId = ?', [guildId, userId], (e, r) => {
-        if (e) rej(e);
-        else if (!r) {
-            db.run('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId], () => res({ coins: 0 }));
-        } else res(r);
-    });
-});
+const getServerUserData = async (guildId, userId) => {
+    let r = await dbGet('SELECT coins FROM server_coins WHERE guildId = ? AND userId = ?', [guildId, userId]);
+    if (!r) {
+        await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
+        return { coins: 0 };
+    }
+    return r;
+};
 
-const setActiveQuestion = (userId, quizId) => new Promise((res, rej) => {
-    db.run(
-        'INSERT INTO user_quiz (userId, quizId, askedAt) VALUES (?, ?, ?) ON CONFLICT(userId) DO UPDATE SET quizId=excluded.quizId, askedAt=excluded.askedAt',
-        [userId, quizId, Date.now()],
-        e => e ? rej(e) : res()
-    );
-});
+const setActiveQuestion = (userId, quizId) => dbRun(
+    'INSERT INTO user_quiz (userId, quizId, askedAt) VALUES (?, ?, ?) ON CONFLICT(userId) DO UPDATE SET quizId=excluded.quizId, askedAt=excluded.askedAt',
+    [userId, quizId, Date.now()]
+);
 
-const getActiveQuestion = userId => new Promise((res, rej) => {
-    db.get('SELECT quizId, askedAt FROM user_quiz WHERE userId = ?', [userId], (e, r) => e ? rej(e) : res(r || null));
-});
+const getActiveQuestion = userId => dbGet('SELECT quizId, askedAt FROM user_quiz WHERE userId = ?', [userId]);
 
-const clearActiveQuestion = userId => new Promise((res, rej) => db.run('DELETE FROM user_quiz WHERE userId = ?', [userId], e => e ? rej(e) : res()));
+const clearActiveQuestion = userId => dbRun('DELETE FROM user_quiz WHERE userId = ?', [userId]);
 
-const getCooldown = userId => new Promise((res, rej) => db.get('SELECT lastUsed FROM quiz_cooldown WHERE userId = ?', [userId], (e, r) => e ? rej(e) : res(r || null)));
-const setCooldown = userId => new Promise((res, rej) => db.run('INSERT INTO quiz_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()], e => e ? rej(e) : res()));
+const getCooldown = userId => dbGet('SELECT lastUsed FROM quiz_cooldown WHERE userId = ?', [userId]);
+const setCooldown = userId => dbRun('INSERT INTO quiz_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()]);
 
-const getQuizHistory = userId => new Promise((res, rej) => {
-    db.get('SELECT askedIds FROM quiz_history WHERE userId = ?', [userId], (e, r) => {
-        if (e) rej(e);
-        res(r && r.askedIds ? r.askedIds.split(',').map(Number) : []);
-    });
-});
+const getQuizHistory = async (userId) => {
+    let r = await dbGet('SELECT askedIds FROM quiz_history WHERE userId = ?', [userId]);
+    return r && r.askedIds ? r.askedIds.split(',').map(Number) : [];
+};
 
-const addQuizToHistory = (userId, quizId) => new Promise((res, rej) => {
-    getQuizHistory(userId).then(history => {
-        if (!history.includes(quizId)) history.push(quizId);
-        db.run('INSERT INTO quiz_history (userId, askedIds) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET askedIds=excluded.askedIds', [userId, history.join(',')], e => e ? rej(e) : res());
-    });
-});
+const addQuizToHistory = async (userId, quizId) => {
+    const history = await getQuizHistory(userId);
+    if (!history.includes(quizId)) history.push(quizId);
+    return dbRun('INSERT INTO quiz_history (userId, askedIds) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET askedIds=excluded.askedIds', [userId, history.join(',')]);
+};
 
-const upsertGuildUser = (guildId, userId) => new Promise((res, rej) => {
-    db.run('INSERT OR IGNORE INTO guild_users (guildId, userId) VALUES (?, ?)', [guildId, userId], e => e ? rej(e) : res());
-});
+const upsertGuildUser = (guildId, userId) => dbRun('INSERT OR IGNORE INTO guild_users (guildId, userId) VALUES (?, ?)', [guildId, userId]);
 
-const getQuizStats = userId => new Promise((res, rej) => {
-    db.get('SELECT correct, wrong FROM quiz_stats WHERE userId = ?', [userId], (e, r) => {
-        if (e) rej(e);
-        else if (!r) res({ correct: 0, wrong: 0 });
-        else res(r);
-    });
-});
+const getQuizStats = async (userId) => {
+    let r = await dbGet('SELECT correct, wrong FROM quiz_stats WHERE userId = ?', [userId]);
+    return r || { correct: 0, wrong: 0 };
+};
 
-const incQuizStat = (userId, column) => new Promise((res, rej) => {
-    db.run('INSERT OR IGNORE INTO quiz_stats (userId, correct, wrong) VALUES (?, 0, 0)', [userId], err => {
-        if (err) return rej(err);
-        db.run(`UPDATE quiz_stats SET ${column} = ${column} + 1 WHERE userId = ?`, [userId], e => e ? rej(e) : res());
-    });
-});
+const incQuizStat = async (userId, column) => {
+    await dbRun('INSERT OR IGNORE INTO quiz_stats (userId, correct, wrong) VALUES (?, 0, 0)', [userId]);
+    return dbRun(`UPDATE quiz_stats SET ${column} = ${column} + 1 WHERE userId = ?`, [userId]);
+};
 
-const getGuessActive = userId => new Promise((res, rej) => {
-    db.get('SELECT playerName, askedAt, hintIndex FROM guess_active WHERE userId = ?', [userId], (e, r) => e ? rej(e) : res(r || null));
-});
-const setGuessActive = (userId, playerName) => new Promise((res, rej) => {
-    db.run('INSERT INTO guess_active (userId, playerName, askedAt, hintIndex) VALUES (?, ?, ?, 1) ON CONFLICT(userId) DO UPDATE SET playerName=excluded.playerName, askedAt=excluded.askedAt, hintIndex=excluded.hintIndex', [userId, playerName, Date.now()], e => e ? rej(e) : res());
-});
-const setGuessHintIndex = (userId, hintIndex) => new Promise((res, rej) => db.run('UPDATE guess_active SET hintIndex = ? WHERE userId = ?', [hintIndex, userId], e => e ? rej(e) : res()));
-const clearGuessActive = userId => new Promise((res, rej) => db.run('DELETE FROM guess_active WHERE userId = ?', [userId], e => e ? rej(e) : res()));
-const getGuessCooldown = userId => new Promise((res, rej) => db.get('SELECT lastUsed FROM guess_cooldown WHERE userId = ?', [userId], (e, r) => e ? rej(e) : res(r || null)));
-const setGuessCooldown = userId => new Promise((res, rej) => db.run('INSERT INTO guess_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()], e => e ? rej(e) : res()));
+const getGuessActive = userId => dbGet('SELECT playerName, askedAt, hintIndex FROM guess_active WHERE userId = ?', [userId]);
+const setGuessActive = (userId, playerName) => dbRun('INSERT INTO guess_active (userId, playerName, askedAt, hintIndex) VALUES (?, ?, ?, 1) ON CONFLICT(userId) DO UPDATE SET playerName=excluded.playerName, askedAt=excluded.askedAt, hintIndex=excluded.hintIndex', [userId, playerName, Date.now()]);
+const setGuessHintIndex = (userId, hintIndex) => dbRun('UPDATE guess_active SET hintIndex = ? WHERE userId = ?', [hintIndex, userId]);
+const clearGuessActive = userId => dbRun('DELETE FROM guess_active WHERE userId = ?', [userId]);
+const getGuessCooldown = userId => dbGet('SELECT lastUsed FROM guess_cooldown WHERE userId = ?', [userId]);
+const setGuessCooldown = userId => dbRun('INSERT INTO guess_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()]);
 
 // ---------------------------
 // Logic Helpers
@@ -1598,6 +1648,10 @@ client.once(Events.ClientReady, async () => {
                 name: 'admin-backup',
                 description: 'Generate recovery protocols (Owner only)'
             },
+            {
+                name: 'admin-repair',
+                description: 'Verify database integrity and repair if possible (Owner only)'
+            },
             { 
                 name: 'quiz', 
                 description: 'Test your brain for rewards (30s cooldown)',
@@ -1690,7 +1744,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🛠️ Admin Commands', 
-                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View the chess and sports question bank' 
+                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View the chess and sports question bank\n`/admin-repair` - Force a database check' 
                 }
             )
             .setColor(0x3498DB)
@@ -2163,7 +2217,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🛠️ Command & Control (Admins)', 
-                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only)." 
+                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only).\n• `/admin-repair`: Force a database integrity check (Owner Only)." 
                         }
                     )
                     .setColor(0x3498DB)
@@ -2799,49 +2853,41 @@ client.on(Events.InteractionCreate, async interaction => {
                 return interaction.editReply({ embeds: [embed] });
             }
 
-            if (commandName === 'admin-backup') {
+            if (commandName === 'admin-repair') {
                 if (user.id !== '1324354578338025533') {
                     return interaction.editReply({ content: "❌ This is a restricted owner command.", ephemeral: true });
                 }
 
-                const serverCoins = await dbAll('SELECT * FROM server_coins WHERE guildId = ?', [guild.id]);
-                const shopItems = await dbAll('SELECT * FROM server_shop WHERE guildId = ?', [guild.id]);
-
-                let output = "**Database Backup (Copy these if you reset)**\n\n";
+                await interaction.editReply("🔍 Starting deep database integrity check...");
                 
-                output += "__**Coins Recovery Commands:**__\n";
-                if (serverCoins.length === 0) {
-                    output += "*No user balances found.*\n";
-                } else {
-                    for (const row of serverCoins) {
-                        if (row.coins > 0) {
-                            output += `\`/addmoney user:${row.userId} amount:${row.coins}\` (User: <@${row.userId}>)\n`;
-                        }
+                db.get('PRAGMA integrity_check', async (err, row) => {
+                    if (err) {
+                        await interaction.editReply(`❌ Integrity check failed with error: ${err.message}`);
+                        checkCorrupt(err);
+                        return;
                     }
-                }
 
-                output += "\n__**Shop Recovery Commands:**__\n";
-                if (shopItems.length === 0) {
-                    output += "*No shop items found.*\n";
-                } else {
-                    for (const item of shopItems) {
-                        output += `\`/item create name:${item.itemName} role:${item.roleId} price:${item.price}\` (Role: <@&${item.roleId}>)\n`;
+                    if (row && row.integrity_check === 'ok') {
+                        const embed = new EmbedBuilder()
+                            .setTitle("✅ Database Healthy")
+                            .setDescription("The database integrity check passed successfully. All tables are stable.")
+                            .setColor(0x2ECC71)
+                            .setTimestamp();
+                        await interaction.editReply({ content: null, embeds: [embed] });
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle("⚠️ Database Corruption Detected")
+                            .setDescription(`The integrity check returned: \`${row ? row.integrity_check : 'Unknown Error'}\`.\n\nAttempting automatic recovery...`)
+                            .setColor(0xE74C3C)
+                            .setTimestamp();
+                        await interaction.editReply({ content: null, embeds: [embed] });
+                        
+                        handleDatabaseCorruption();
+                        // Exit so process manager restarts
+                        setTimeout(() => process.exit(1), 3000);
                     }
-                }
-
-                if (output.length > 1900) {
-                    return interaction.editReply({ content: "⚠️ Backup too large for a single message. Please check the database manually if possible." });
-                }
-
-                const embed = new EmbedBuilder()
-                    .setAuthor({ name: "🛡️ Owner Security Tool" })
-                    .setTitle("Manual Data Backup")
-                    .setDescription(output)
-                    .setColor(0x9B59B6)
-                    .setFooter({ text: "Use these commands to restore data after a reset." })
-                    .setTimestamp();
-                
-                return interaction.editReply({ embeds: [embed] });
+                });
+                return;
             }
 
             if (commandName === 'addmoney') {
