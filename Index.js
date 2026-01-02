@@ -1796,6 +1796,8 @@ client.on(Events.InteractionCreate, async interaction => {
             const [type, action, key, level, targetId] = interaction.customId.split('_');
 
             if (type === 'upgrade') {
+                await interaction.deferUpdate().catch(() => {});
+                
                 if (targetId !== user.id) {
                     return interaction.followUp({ content: "❌ This menu is not for you.", ephemeral: true });
                 }
