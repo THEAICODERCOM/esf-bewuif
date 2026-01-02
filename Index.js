@@ -29,7 +29,7 @@ db.serialize(() => {
     db.run('PRAGMA journal_mode = WAL;');
     db.run('PRAGMA synchronous = NORMAL;');
 
-    db.run('CREATE TABLE IF NOT EXISTS users (userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, lastDaily INTEGER DEFAULT 0)');
+    db.run('CREATE TABLE IF NOT EXISTS users (userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, lastDaily INTEGER DEFAULT 0, streak INTEGER DEFAULT 0)');
     db.run('CREATE TABLE IF NOT EXISTS user_quiz (userId TEXT PRIMARY KEY, quizId INTEGER NOT NULL, askedAt INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS quiz_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS quiz_history (userId TEXT PRIMARY KEY, askedIds TEXT NOT NULL)');
@@ -47,11 +47,13 @@ db.serialize(() => {
 const dbAll = (sql, params = []) => new Promise((res, rej) => db.all(sql, params, (e, r) => e ? rej(e) : res(r)));
 const dbRun = (sql, params = []) => new Promise((res, rej) => db.run(sql, params, function(e) { e ? rej(e) : res(this); }));
 
+const CHALLENGES = new Map();
+
 const getUserData = userId => new Promise((res, rej) => {
-    db.get('SELECT coins, lastDaily FROM users WHERE userId = ?', [userId], (e, r) => {
+    db.get('SELECT coins, lastDaily, streak FROM users WHERE userId = ?', [userId], (e, r) => {
         if (e) rej(e);
         else if (!r) {
-            db.run('INSERT OR IGNORE INTO users (userId, coins, lastDaily) VALUES (?,0,0)', [userId], () => res({ coins: 0, lastDaily: 0 }));
+            db.run('INSERT OR IGNORE INTO users (userId, coins, lastDaily, streak) VALUES (?,0,0,0)', [userId], () => res({ coins: 0, lastDaily: 0, streak: 0 }));
         } else res(r);
     });
 });
@@ -1431,9 +1433,55 @@ loadPlayers();
 client.once(Events.ClientReady, async () => {
     try {
         await client.application.commands.set([
-            { name: 'daily', description: 'Claim your daily stipend (25 coins)' },
+            { name: 'daily', description: 'Claim your daily stipend (25+ coins)' },
             { name: 'balance', description: 'Check your or another player\'s treasury balance', options: [{ name: 'user', description: 'User to check', type: ApplicationCommandOptionType.User, required: false }] },
-            { name: 'leaderboard', description: 'View the top legends (Global or Server)', options: [{ name: 'scope', description: 'Leaderboard scope', type: ApplicationCommandOptionType.String, required: false, choices: [{ name: 'Global', value: 'global' }, { name: 'Server', value: 'server' }] }] },
+            { 
+                name: 'leaderboard', 
+                description: 'View the top legends', 
+                options: [
+                    { 
+                        name: 'scope', 
+                        description: 'Leaderboard scope', 
+                        type: ApplicationCommandOptionType.String, 
+                        required: false, 
+                        choices: [{ name: 'Global', value: 'global' }, { name: 'Server', value: 'server' }] 
+                    },
+                    {
+                        name: 'category',
+                        description: 'Leaderboard category',
+                        type: ApplicationCommandOptionType.String,
+                        required: false,
+                        choices: [{ name: 'Wealth (Coins)', value: 'wealth' }, { name: 'Intelligence (Quiz Correct)', value: 'intelligence' }]
+                    }
+                ] 
+            },
+            {
+                name: 'challenge',
+                description: 'Challenge someone to a 1v1 quiz battle',
+                options: [
+                    { name: 'user', description: 'User to challenge', type: ApplicationCommandOptionType.User, required: true },
+                    { name: 'bet', description: 'Coins to bet', type: ApplicationCommandOptionType.Integer, required: true },
+                    { 
+                        name: 'type', 
+                        description: 'Quiz category', 
+                        type: ApplicationCommandOptionType.String, 
+                        required: true,
+                        choices: [
+                            { name: 'Nerd Board Game', value: 'chess' },
+                            { name: 'Football', value: 'football' },
+                            { name: 'Basketball', value: 'basketball' }
+                        ]
+                    }
+                ]
+            },
+            {
+                name: 'gift',
+                description: 'Gift some of your coins to another user',
+                options: [
+                    { name: 'user', description: 'Recipient', type: ApplicationCommandOptionType.User, required: true },
+                    { name: 'amount', description: 'Amount to gift', type: ApplicationCommandOptionType.Integer, required: true }
+                ]
+            },
             { name: 'shop', description: 'Browse the server\'s most expensive stuff' },
             { 
                 name: 'item', 
@@ -1620,6 +1668,95 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ components: [] });
                 return;
             }
+
+            if (customId.startsWith('challenge_accept:')) {
+                const parts = customId.split(':');
+                const challengerId = parts[1];
+                const bet = parseInt(parts[2]);
+                const type = parts[3];
+
+                if (user.id === challengerId) {
+                    return interaction.followUp({ content: "❌ You cannot accept your own challenge!", ephemeral: true });
+                }
+
+                const targetData = await getServerUserData(guild.id, user.id);
+                if (targetData.coins < bet) {
+                    return interaction.followUp({ content: `❌ You don't have enough coins to accept this bet (**${bet}**).`, ephemeral: true });
+                }
+
+                const challengerData = await getServerUserData(guild.id, challengerId);
+                if (challengerData.coins < bet) {
+                    return interaction.followUp({ content: `❌ The challenger no longer has enough coins for this bet.`, ephemeral: true });
+                }
+
+                const q = await getRandomQuizForUser(user.id, type);
+                const choices = [q.answer, ...q.wrong].sort(() => 0.5 - Math.random());
+
+                CHALLENGES.set(interaction.message.id, {
+                    challengerId,
+                    targetId: user.id,
+                    bet,
+                    quizId: q.id,
+                    startTime: Date.now()
+                });
+
+                const row = new ActionRowBuilder().addComponents(
+                    choices.map(c => new ButtonBuilder().setCustomId(`battle_choice:${c}`).setLabel(c).setStyle(ButtonStyle.Primary))
+                );
+
+                const embed = new EmbedBuilder()
+                    .setTitle("⚔️ BATTLE START!")
+                    .setDescription(`**${q.question}**\n\n💰 **Pot:** ${bet * 2} coins\n⏱️ **First to answer correctly wins!**`)
+                    .setColor("#F1C40F");
+
+                await interaction.editReply({ content: `<@${challengerId}> vs <@${user.id}>`, embeds: [embed], components: [row] });
+                return;
+            }
+
+            if (customId.startsWith('challenge_reject:')) {
+                const challengerId = customId.split(':')[1];
+                if (user.id === challengerId) {
+                    await interaction.editReply({ content: "Challenge cancelled.", embeds: [], components: [] });
+                } else {
+                    await interaction.editReply({ content: `Challenge rejected by **${user.username}**.`, embeds: [], components: [] });
+                }
+                return;
+            }
+
+            if (customId.startsWith('battle_choice:')) {
+                const challenge = CHALLENGES.get(interaction.message.id);
+                if (!challenge) {
+                    return interaction.followUp({ content: "❌ This battle has already ended.", ephemeral: true });
+                }
+
+                if (user.id !== challenge.challengerId && user.id !== challenge.targetId) {
+                    return interaction.followUp({ content: "❌ You are not part of this battle!", ephemeral: true });
+                }
+
+                const choice = customId.split(':')[1];
+                const q = QUIZ_POOL.find(i => i.id === challenge.quizId);
+                const correct = choice === q.answer;
+
+                CHALLENGES.delete(interaction.message.id);
+
+                const winnerId = correct ? user.id : (user.id === challenge.challengerId ? challenge.targetId : challenge.challengerId);
+                const loserId = winnerId === challenge.challengerId ? challenge.targetId : challenge.challengerId;
+
+                await addUserCoins(winnerId, challenge.bet, guild.id);
+                await addUserCoins(loserId, -challenge.bet, guild.id);
+
+                const winnerUser = await client.users.fetch(winnerId);
+                const loserUser = await client.users.fetch(loserId);
+
+                const embed = new EmbedBuilder()
+                    .setTitle("⚔️ BATTLE ENDED")
+                    .setDescription(`**${winnerUser.username}** wins the pot of **${challenge.bet * 2} coins**!\n\n${correct ? `Correct answer: **${choice}**` : `Incorrect answer by ${user.username}. The winner is ${winnerUser.username}!`}`)
+                    .setColor("#2ECC71")
+                    .setTimestamp();
+
+                await interaction.editReply({ content: `Winner: <@${winnerId}>`, embeds: [embed], components: [] });
+                return;
+            }
             if (customId.startsWith('quiz_choice:')) {
                 const choice = customId.split(':')[1];
                 const active = await getActiveQuestion(user.id);
@@ -1776,32 +1913,28 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'help') {
                 const embed = new EmbedBuilder()
-                    .setTitle("Yo! So this is how to use the @Quiz Bot")
-                    .setDescription("Master the board games and test your sports knowledge! Earn coins, climb the leaderboards, and unlock exclusive server roles.")
+                    .setTitle("🤖 Ultimate Guide to @Quiz Bot")
+                    .setDescription("Master the board games, dominate the sports trivia, and flex your wealth on the leaderboards!")
                     .addFields(
                         { 
-                            name: '1️⃣ What is it?', 
-                            value: "It's like a mix of a Quiz knowledge and an economy system where you can earn coins and buy roles." 
+                            name: '💎 Getting Rich (Economy)', 
+                            value: "• `/daily`: Claim free coins every day. The more days you come back, the bigger your **streak bonus**!\n• `/gift <user> <amount>`: Send some of your coins to a friend.\n• `/balance [user]`: Check how much money you or someone else has." 
                         },
                         { 
-                            name: '2️⃣ How to use it / Get rich?', 
-                            value: "• `/daily`: Use this every day to get free coins. It's literally free money, don't forget it.\n• `/quiz <type>`: Get one of 150+ unique questions to answer in 60s. Solve correctly and get coins. Choose between **Nerd Board Game**, **Football**, or **Basketball**! (30s cooldown)\n• `/guesstheplayer <type>`: The bot gives you hints about a famous person. First hint is free, others cost 5 coins. (1m cooldown)\n• `/guess <name>`: Use this to submit your answer for the \"Guess the Pro\" game.\n• `/ration`: See how many quiz questions you've actually gotten right." 
+                            name: '🎮 Games & Quizzes', 
+                            value: "• `/quiz <type>`: 150+ questions (60s limit). Correct answers = Coins! (30s cooldown)\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery pro. Hints cost 5 coins.\n• `/guess <name>`: Submit your answer for Guess the Pro.\n• `/ration`: View your total quiz accuracy and stats." 
                         },
                         { 
-                            name: '🛒 Spending Your Cash', 
-                            value: "But after having Money what are you gonna do with it?\n• `/shop`: Check out what you can buy. Usually, it's cool roles like \"Legendary NPC\" or \"Ultimate Lifeform.\"\n• `/balance [user]`: Check how many coins you or another user actually have so you know if you're broke or not." 
+                            name: '🏆 Competition & Shop', 
+                            value: "• `/leaderboard`: View top players by **Wealth** or **Intelligence** (Global/Server).\n• `/shop`: Buy exclusive roles with your hard-earned coins!" 
                         },
                         { 
-                            name: '🏆 Competitive Aspects', 
-                            value: "• `/leaderboard scope`: See who the richest players in the Global or Server boards are. Try to get to the top!" 
-                        },
-                        { 
-                            name: '🛠️ Admin Stuff (If you have permissions)', 
-                            value: "• `/addmoney <user> <amount>`: Give someone coins (or yourself, lol).\n• `/removemoney <user> <amount>`: Take coins away if someone is being annoying.\n• `/questions [page]`: See all the questions in the nerd lord question bank.\n• `/item create <name> <role> <price>`: Create an item for the shop (up to 10).\n• `/item edit <name>`: Edit a created item.\n• `/item delete <name>`: Delete a created item from the shop.\n• `/shop-delete-all`: Simply delete the entire shop." 
+                            name: '🛠️ Admin Commands', 
+                            value: "• `/addmoney`: Deposit coins to a user.\n• `/removemoney`: Seize coins from a user.\n• `/item`: Create/Edit/Delete shop items.\n• `/questions`: View the full question bank." 
                         }
                     )
                     .setColor(0x3498DB)
-                    .setFooter({ text: "Basically, just spam /daily and /quiz to get coins, then flex on everyone with a cool role!" })
+                    .setFooter({ text: "Pro tip: Keep your streak alive for maximum daily rewards!" })
                     .setTimestamp();
                 return interaction.editReply({ embeds: [embed] });
             }
@@ -1966,26 +2099,97 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'daily') {
                 const data = await getUserData(user.id);
-                if (Date.now() - data.lastDaily < 86400000) {
-                    const remaining = 86400000 - (Date.now() - data.lastDaily);
-                    const h = Math.floor(remaining / 3600000);
-                    const m = Math.floor((remaining % 3600000) / 60000);
+                const now = Date.now();
+                const oneDay = 24 * 60 * 60 * 1000;
+                const diff = now - data.lastDaily;
+
+                if (diff < oneDay) {
+                    const remaining = oneDay - diff;
+                    const hours = Math.floor(remaining / (60 * 60 * 1000));
+                    const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
                     const embed = new EmbedBuilder()
                         .setTitle("⏳ Hold Your Horses")
-                        .setDescription(`You've already claimed your daily reward. Come back in **${h}h ${m}m**.`)
+                        .setDescription(`You've already claimed your daily reward. Come back in **${hours}h ${minutes}m**.`)
                         .setColor(0x95A5A6);
                     return interaction.editReply({ embeds: [embed] });
                 }
-                await addUserCoins(user.id, 25, guild.id);
-                await dbRun('UPDATE users SET lastDaily = ? WHERE userId = ?', [Date.now(), user.id]);
+
+                let newStreak = 1;
+                if (diff < 2 * oneDay) {
+                    newStreak = (data.streak || 0) + 1;
+                }
+
+                const baseReward = 25;
+                const streakBonus = Math.min((newStreak - 1) * 5, 50); // Max 50 bonus
+                const totalReward = baseReward + streakBonus;
+
+                await dbRun('UPDATE users SET coins = coins + ?, lastDaily = ?, streak = ? WHERE userId = ?', [totalReward, now, newStreak, user.id]);
+                await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guild.id, user.id]);
+                await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [totalReward, guild.id, user.id]);
+                
                 const embed = new EmbedBuilder()
-                    .setTitle("🎁 Daily Allowance")
-                    .setDescription("Your daily stipend has been deposited into your treasury.")
-                    .addFields({ name: '💰 Amount', value: '`25` coins', inline: true })
-                    .setColor(0x2ECC71)
+                    .setTitle("💰 Daily Stipend Claimed")
+                    .setDescription(`You received **${totalReward} coins**!`)
+                    .addFields(
+                        { name: "🔥 Streak", value: `${newStreak} days`, inline: true },
+                        { name: "🎁 Bonus", value: `${streakBonus} coins`, inline: true }
+                    )
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/1162/1162951.png')
-                    .setFooter({ text: "Come back tomorrow for more!" });
+                    .setColor("#FFD700");
+
                 return interaction.editReply({ embeds: [embed] });
+            }
+
+            if (commandName === 'gift') {
+                const target = options.getUser('user');
+                const amount = options.getInteger('amount');
+
+                if (target.id === user.id) return interaction.editReply({ content: "❌ You cannot gift coins to yourself!" });
+                if (amount <= 0) return interaction.editReply({ content: "❌ Please provide a valid amount to gift." });
+
+                const senderData = await getServerUserData(guild.id, user.id);
+                if (senderData.coins < amount) return interaction.editReply({ content: "❌ You don't have enough coins to gift that amount!" });
+
+                await addUserCoins(user.id, -amount, guild.id);
+                await addUserCoins(target.id, amount, guild.id);
+
+                const embed = new EmbedBuilder()
+                    .setTitle("🎁 Generous Gift!")
+                    .setDescription(`**${user.username}** gifted **${amount} coins** to **${target.username}**!`)
+                    .setColor("#FFD700")
+                    .setTimestamp();
+
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            if (commandName === 'challenge') {
+                const target = options.getUser('user');
+                const bet = options.getInteger('bet');
+                const type = options.getString('type');
+
+                if (target.id === user.id) return interaction.editReply({ content: "❌ You cannot challenge yourself!" });
+                if (target.bot) return interaction.editReply({ content: "❌ You cannot challenge a bot!" });
+                if (bet < 10) return interaction.editReply({ content: "❌ Minimum bet is **10 coins**." });
+
+                const challengerData = await getServerUserData(guild.id, user.id);
+                if (challengerData.coins < bet) return interaction.editReply({ content: "❌ You don't have enough coins for this bet!" });
+
+                const targetData = await getServerUserData(guild.id, target.id);
+                if (targetData.coins < bet) return interaction.editReply({ content: `❌ **${target.username}** doesn't have enough coins for this bet!` });
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId(`challenge_accept:${user.id}:${bet}:${type}`).setLabel('Accept').setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId(`challenge_reject:${user.id}`).setLabel('Reject').setStyle(ButtonStyle.Danger)
+                );
+
+                const embed = new EmbedBuilder()
+                    .setTitle("⚔️ 1v1 Quiz Challenge!")
+                    .setDescription(`**${user.username}** has challenged **${target.username}** to a **${type}** quiz battle!\n💰 **Bet:** ${bet} coins\n\n**${target.username}**, do you accept?`)
+                    .setColor("#E74C3C")
+                    .setTimestamp();
+
+                await interaction.editReply({ content: `<@${target.id}>`, embeds: [embed], components: [row] });
+                return;
             }
 
             if (commandName === 'balance') {
@@ -2007,26 +2211,37 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'leaderboard') {
                 const scope = options.getString('scope') || 'server';
+                const category = options.getString('category') || 'wealth';
                 let rows;
-                if (scope === 'server' && guild) {
-                    rows = await dbAll('SELECT userId, coins FROM server_coins WHERE guildId = ? ORDER BY coins DESC LIMIT 10', [guild.id]);
+                
+                if (category === 'wealth') {
+                    if (scope === 'server' && guild) {
+                        rows = await dbAll('SELECT userId, coins FROM server_coins WHERE guildId = ? ORDER BY coins DESC LIMIT 10', [guild.id]);
+                    } else {
+                        rows = await dbAll('SELECT userId, coins FROM users ORDER BY coins DESC LIMIT 10');
+                    }
                 } else {
-                    rows = await dbAll('SELECT userId, coins FROM users ORDER BY coins DESC LIMIT 10');
+                    // Intelligence (Quiz Correct) - Global only for now as stats are global
+                    rows = await dbAll('SELECT userId, correct as coins FROM quiz_stats ORDER BY correct DESC LIMIT 10');
                 }
+
                 const medals = ['🥇','🥈','🥉'];
                 const txt = rows.map((r, i) => {
                     const medal = medals[i] || `**#${i+1}**`;
-                    return `${medal} <@${r.userId}> \u2014 \`${r.coins.toLocaleString()}\` coins`;
+                    const unit = category === 'wealth' ? 'coins' : 'correct answers';
+                    return `${medal} <@${r.userId}> \u2014 \`${r.coins.toLocaleString()}\` ${unit}`;
                 }).join('\n') || "*The records are currently empty.*";
                 
-                const title = scope === 'server' ? "🏆 Server Power Rankings" : "🌍 Global Hall of Fame";
+                let title = scope === 'server' ? "🏆 Server Power Rankings" : "🌍 Global Hall of Fame";
+                if (category === 'intelligence') title = "🧠 Global Intelligence Leaderboard";
+
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: "📊 Competitive Standings" })
                     .setTitle(title)
                     .setDescription(`The top 10 people currently dominating the boards.\n\n${txt}`)
-                    .setThumbnail(scope === 'server' ? guild.iconURL({ dynamic: true }) : 'https://cdn-icons-png.flaticon.com/512/1021/1021204.png')
+                    .setThumbnail(scope === 'server' && category === 'wealth' ? guild.iconURL({ dynamic: true }) : 'https://cdn-icons-png.flaticon.com/512/1021/1021204.png')
                     .setColor(0xFFD700)
-                    .setFooter({ text: `Scope: ${scope.charAt(0).toUpperCase() + scope.slice(1)} • Updated just now` })
+                    .setFooter({ text: `Category: ${category.charAt(0).toUpperCase() + category.slice(1)} • Scope: ${scope.charAt(0).toUpperCase() + scope.slice(1)}` })
                     .setTimestamp();
                 return interaction.editReply({ embeds: [embed] });
             }
