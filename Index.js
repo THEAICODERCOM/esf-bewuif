@@ -1925,7 +1925,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 
                 // Hint cost: 5 coins base, minus upgrades
                 const upgrades = await getUserUpgrades(user.id);
-                const discount = UPGRADE_TIERS.hint_discount.levels[upgrades.hint_discount].effect;
+                const discount = UPGRADE_TIERS.hint_discount.levels[upgrades ? upgrades.hint_discount : 0].effect;
                 const HINT_COST = Math.max(0, 5 - discount);
 
                 const data = await getServerUserData(guild.id, user.id);
@@ -2164,7 +2164,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
                 const row = await getCooldown(user.id);
                 const upgrades = await getUserUpgrades(user.id);
-                const reduction = UPGRADE_TIERS.cooldown_reduction.levels[upgrades.cooldown_reduction].effect;
+                const reduction = UPGRADE_TIERS.cooldown_reduction.levels[upgrades ? upgrades.cooldown_reduction : 0].effect;
                 const cooldownTime = (30 - reduction) * 1000; // 30 seconds base
                 if (row && (Date.now() - row.lastUsed < cooldownTime)) {
                     const diff = cooldownTime - (Date.now() - row.lastUsed);
@@ -2241,7 +2241,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         const data = await getServerUserData(guild.id, user.id);
                         
                         const upgrades = await getUserUpgrades(user.id);
-                        const discount = UPGRADE_TIERS.hint_discount.levels[upgrades.hint_discount].effect;
+                        const discount = UPGRADE_TIERS.hint_discount.levels[upgrades ? upgrades.hint_discount : 0].effect;
                         const hintCost = Math.max(0, 5 - discount);
 
                         const embed = new EmbedBuilder()
@@ -2317,7 +2317,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 const upgrades = await getUserUpgrades(user.id);
-                const upgradeBonus = UPGRADE_TIERS.daily_boost.levels[upgrades.daily_boost].effect;
+                const upgradeBonus = UPGRADE_TIERS.daily_boost.levels[upgrades ? upgrades.daily_boost : 0].effect;
                 const baseReward = 25;
                 const streakBonus = Math.min((newStreak - 1) * 5, 50); // Max 50 bonus
                 const totalReward = baseReward + streakBonus + upgradeBonus;
