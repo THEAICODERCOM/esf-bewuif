@@ -1726,25 +1726,25 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.MessageCreate, async message => {
     if (message.author.bot) return;
     if (message.mentions.has(client.user) && !message.mentions.everyone) {
-        const embed = new EmbedBuilder()
+                const embed = new EmbedBuilder()
             .setTitle("🤖 Bot Commands")
             .setDescription("Yo! Here is how you can use the @Quiz Bot to get rich and flex on others:")
             .addFields(
                 { 
                     name: '💎 Economy & Daily', 
-                    value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope]` - View top players (Global or Server)' 
+                    value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope] [category]` - View top players (Wealth or Intelligence)\n`/gift <user> <amount>` - Transfer global coins to an ally' 
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
-                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/guesstheplayer <type>` - Start "Guess the Pro" (1m cooldown)\n`/guess <name>` - Submit your person guess\n`/ration` - View your accuracy and statistics' 
+                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/challenge <user> <bet> <type>` - 1v1 battle for a pot of coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your person guess\n`/ration` - View your accuracy and statistics' 
                 },
                 { 
-                    name: '🛒 Server Shop', 
-                    value: '`/shop` - View items available in this server\'s shop\n`/item buy <name>` - Purchase a role from the shop' 
+                    name: '🏆 Progression & Shop', 
+                    value: '`/upgrade` - Invest in permanent boosts (Daily Income, Cooldowns, Hints)\n`/shop` - View roles available in this server\'s shop\n`/item buy <name>` - Purchase a role from the shop' 
                 },
                 { 
                     name: '🛠️ Admin Commands', 
-                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View the chess and sports question bank\n`/admin-repair` - Force a database check' 
+                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View the question bank\n`/admin-backup` - Generate recovery protocols (Owner Only)\n`/admin-repair` - Force a database integrity check' 
                 }
             )
             .setColor(0x3498DB)
@@ -1776,11 +1776,13 @@ async function getRandomQuizForUser(userId, type) {
 // Interaction Handler
 // ---------------------------
 client.on(Events.InteractionCreate, async interaction => {
+    const { user, guild } = interaction;
+
     // 1. Immediate Deferral to prevent "Application didn't respond"
     try {
         if (interaction.isAutocomplete()) {
             const focusedValue = interaction.options.getFocused();
-            const shopItems = await dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [interaction.guild.id]);
+            const shopItems = await dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [guild.id]);
             const filtered = shopItems
                 .filter(item => item.itemName.toLowerCase().includes(focusedValue.toLowerCase()))
                 .map(item => ({ name: item.itemName, value: item.itemName }));
@@ -1841,8 +1843,6 @@ client.on(Events.InteractionCreate, async interaction => {
         console.error("Deferral Error:", e);
         return;
     }
-
-    const { user, guild } = interaction;
 
     // 2. Background Tasks (Non-blocking)
     if (guild) {
@@ -2189,7 +2189,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setDisabled(serverData.coins < cost);
 
                     const cancelBtn = new ButtonBuilder()
-                        .setCustomId(`upgrade_cancel_${user.id}`)
+                        .setCustomId(`upgrade_cancel_none_0_${user.id}`)
                         .setLabel("Cancel")
                         .setStyle(ButtonStyle.Secondary);
 
