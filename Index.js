@@ -177,56 +177,56 @@ const isNameMatch = (input, name) => {
 // Quiz Pool & Shop
 // ---------------------------
 const QUIZ_POOL = [
-    { id: 1, type: "chess", question: "How many squares are on a chessboard?", answer: "64 squares", wrong: ["32 squares", "100 squares"], reward: 10 },
-    { id: 2, type: "chess", question: "How many players play chess?", answer: "Two players", wrong: ["One player", "Four players"], reward: 10 },
-    { id: 3, type: "chess", question: "Which color moves first?", answer: "White", wrong: ["Black", "Random"], reward: 10 },
-    { id: 4, type: "chess", question: "How many pawns per player?", answer: "Eight pawns", wrong: ["Six pawns", "Ten pawns"], reward: 10 },
-    { id: 5, type: "chess", question: "What piece is the most powerful?", answer: "Queen", wrong: ["King", "Rook"], reward: 10 },
-    { id: 6, type: "chess", question: "What piece moves in an L-shape?", answer: "Knight", wrong: ["Bishop", "Rook"], reward: 10 },
-    { id: 7, type: "chess", question: "What piece moves diagonally only?", answer: "Bishop", wrong: ["Rook", "Pawn"], reward: 10 },
-    { id: 8, type: "chess", question: "What piece moves horizontally and vertically?", answer: "Rook", wrong: ["Bishop", "Knight"], reward: 10 },
-    { id: 9, type: "chess", question: "What piece can castle?", answer: "King", wrong: ["Queen", "Knight"], reward: 10 },
-    { id: 10, type: "chess", question: "What ends the game immediately?", answer: "Checkmate", wrong: ["Stalemate", "Time out"], reward: 10 },
-    { id: 11, type: "chess", question: "What is check?", answer: "King threatened", wrong: ["King captured", "Pawn lost"], reward: 10 },
-    { id: 12, type: "chess", question: "What is the way of winning in chess?", answer: "Checkmate", wrong: ["Capturing all pawns", "Reaching last rank"], reward: 10 },
-    { id: 13, type: "chess", question: "What is a draw by repetition called?", answer: "Threefold repetition", wrong: ["Stalemate", "Draw offer"], reward: 10 },
-    { id: 14, type: "chess", question: "What is no legal moves but no check?", answer: "Stalemate", wrong: ["Checkmate", "Check"], reward: 10 },
-    { id: 15, type: "chess", question: "What is it called when king is attacked?", answer: "Check", wrong: ["Checkmate", "Stalemate"], reward: 10 },
-    { id: 16, type: "chess", question: "How many files are there?", answer: "Eight files", wrong: ["Six files", "Ten files"], reward: 10 },
-    { id: 17, type: "chess", question: "How many ranks are there?", answer: "Eight ranks", wrong: ["Six ranks", "Ten ranks"], reward: 10 },
-    { id: 18, type: "chess", question: "What square does white king start on?", answer: "e1 square", wrong: ["d1 square", "e2 square"], reward: 10 },
-    { id: 19, type: "chess", question: "What square does black king start on?", answer: "e8 square", wrong: ["d8 square", "e7 square"], reward: 10 },
-    { id: 20, type: "chess", question: "How many kings are on the board?", answer: "Two kings", wrong: ["One king", "Four kings"], reward: 10 },
-    { id: 21, type: "chess", question: "What piece cannot be captured?", answer: "King", wrong: ["Queen", "Pawn"], reward: 10 },
-    { id: 22, type: "chess", question: "What is castling?", answer: "King safety", wrong: ["Pawn move", "Piece capture"], reward: 10 },
-    { id: 23, type: "chess", question: "What notation is commonly used today?", answer: "Algebraic notation", wrong: ["Descriptive notation", "Binary notation"], reward: 10 },
-    { id: 24, type: "chess", question: "What is en passant?", answer: "Pawn capture", wrong: ["Castling", "Promotion"], reward: 10 },
-    { id: 25, type: "chess", question: "What is pawn promotion?", answer: "New piece", wrong: ["Castling", "Checkmate"], reward: 10 },
-    { id: 26, type: "chess", question: "When can promotion happen?", answer: "Last rank", wrong: ["Middle rank", "First rank"], reward: 10 },
-    { id: 27, type: "chess", question: "What is the opening phase?", answer: "Game start", wrong: ["Game end", "Main fight"], reward: 10 },
-    { id: 28, type: "chess", question: "What is the middlegame?", answer: "Main phase", wrong: ["Start", "Finish"], reward: 10 },
-    { id: 29, type: "chess", question: "What is the initial setup called?", answer: "Starting position", wrong: ["End position", "Checkmate"], reward: 10 },
-    { id: 30, type: "chess", question: "What is the endgame?", answer: "Few pieces", wrong: ["Many pieces", "Opening"], reward: 10 },
-    { id: 31, type: "chess", question: "What is a fork?", answer: "Double attack", wrong: ["Single attack", "Defense"], reward: 10 },
-    { id: 32, type: "chess", question: "What is a pin?", answer: "Restricted piece", wrong: ["Free piece", "Jumping piece"], reward: 10 },
-    { id: 33, type: "chess", question: "What is a skewer?", answer: "Reverse pin", wrong: ["Fork", "Sacrifice"], reward: 10 },
-    { id: 34, type: "chess", question: "What happens when a pawn reaches last rank?", answer: "Pawn promotion", wrong: ["Castling", "Stalemate"], reward: 10 },
-    { id: 35, type: "chess", question: "What is zugzwang?", answer: "Forced move", wrong: ["Free move", "No move"], reward: 10 },
-    { id: 36, type: "chess", question: "What is a gambit?", answer: "Pawn sacrifice", reward: 10, wrong: ["Piece trade", "Blunder"] },
-    { id: 37, type: "chess", question: "What is a passed pawn?", answer: "No blockers", reward: 10, wrong: ["Captured pawn", "Blocked pawn"] },
-    { id: 38, type: "chess", question: "What piece can jump others?", answer: "Knight", reward: 10, wrong: ["Rook", "Bishop"] },
-    { id: 39, type: "chess", question: "What is a discovered attack?", answer: "Hidden attack", reward: 10, wrong: ["Direct attack", "Blunder"] },
-    { id: 40, type: "chess", question: "What is a fianchetto?", answer: "Bishop development", reward: 10, wrong: ["King move", "Pawn storm"] },
-    { id: 41, type: "chess", question: "What is checkmate protection called?", answer: "King defense", reward: 10, wrong: ["Attacking", "Trading"] },
-    { id: 42, type: "chess", question: "What is illegal to ignore?", answer: "Check", reward: 10, wrong: ["Trade", "Pawn move"] },
-    { id: 43, type: "chess", question: "What is a draw by agreement?", answer: "Mutual draw", reward: 10, wrong: ["Forced draw", "Win"] },
-    { id: 44, type: "chess", question: "What does FIDE stand for?", answer: "World chess federation", reward: 10, wrong: ["Free international chess", "Football federation"] },
-    { id: 45, type: "chess", question: "What is blitz chess?", answer: "Fast chess", reward: 10, wrong: ["Slow chess", "Classical"] },
-    { id: 46, type: "chess", question: "What is bullet chess?", answer: "Very fast", reward: 10, wrong: ["Rapid", "Slow"] },
-    { id: 47, type: "chess", question: "How many points is a queen worth?", answer: "Nine points", reward: 10, wrong: ["Five points", "Ten points"] },
-    { id: 48, type: "chess", question: "How many points is a rook worth?", answer: "Five points", reward: 10, wrong: ["Three points", "Nine points"] },
-    { id: 49, type: "chess", question: "How many points is a bishop worth?", answer: "Three points", reward: 10, wrong: ["Five points", "One point"] },
-    { id: 50, type: "chess", question: "Who is world champion (2024)?", answer: "Ding Liren", reward: 10, wrong: ["Magnus Carlsen", "Hikaru Nakamura"] },
+    { id: 1, type: "chess", question: "How many boxes are on the grid of doom?", answer: "64 boxes", wrong: ["32 boxes", "100 boxes"], reward: 10 },
+    { id: 2, type: "chess", question: "How many people play this wooden piece war?", answer: "Two nerds", wrong: ["One nerd", "Four nerds"], reward: 10 },
+    { id: 3, type: "chess", question: "Which color moves first in the early game scramble?", answer: "White", wrong: ["Black", "Random"], reward: 10 },
+    { id: 4, type: "chess", question: "How many sacrifice guys (pawns) per nerd?", answer: "Eight guys", wrong: ["Six guys", "Ten guys"], reward: 10 },
+    { id: 5, type: "chess", question: "What piece is the boss's boss?", answer: "Queen", wrong: ["Big boss", "The castle thing"], reward: 10 },
+    { id: 6, type: "chess", question: "What piece moves in an L-shape (the horse)?", answer: "The horse", wrong: ["The pointy dude", "The castle thing"], reward: 10 },
+    { id: 7, type: "chess", question: "What piece moves diagonally only (the pointy dude)?", answer: "The pointy dude", wrong: ["The castle thing", "Sacrifice guy"], reward: 10 },
+    { id: 8, type: "chess", question: "What piece moves horizontally and vertically (the castle thing)?", answer: "The castle thing", wrong: ["The pointy dude", "The horse"], reward: 10 },
+    { id: 9, type: "chess", question: "What piece can do the king hideaway (castle)?", answer: "The big boss", wrong: ["Boss's boss", "The horse"], reward: 10 },
+    { id: 10, type: "chess", question: "What ends the game immediately (total annihilation)?", answer: "Game over", wrong: ["Awkward tie", "Time out"], reward: 10 },
+    { id: 11, type: "chess", question: "What is it called when the big boss is threatened?", answer: "Check", wrong: ["Boss captured", "Guy lost"], reward: 10 },
+    { id: 12, type: "chess", question: "What is the way of winning this war?", answer: "Total annihilation", wrong: ["Capturing all guys", "Reaching last rank"], reward: 10 },
+    { id: 13, type: "chess", question: "What is a draw by doing the same thing 3 times?", answer: "Boring repetition", wrong: ["Awkward tie", "Draw offer"], reward: 10 },
+    { id: 14, type: "chess", question: "What is it called when you can't move but aren't threatened?", answer: "Awkward tie", wrong: ["Total annihilation", "Check"], reward: 10 },
+    { id: 15, type: "chess", question: "What is it called when the big boss is attacked?", answer: "Check", wrong: ["Total annihilation", "Awkward tie"], reward: 10 },
+    { id: 16, type: "chess", question: "How many vertical lines (files) are there?", answer: "Eight lines", wrong: ["Six lines", "Ten lines"], reward: 10 },
+    { id: 17, type: "chess", question: "How many horizontal lines (ranks) are there?", answer: "Eight lines", wrong: ["Six lines", "Ten lines"], reward: 10 },
+    { id: 18, type: "chess", question: "What box does the white big boss start on?", answer: "e1 box", wrong: ["d1 box", "e2 box"], reward: 10 },
+    { id: 19, type: "chess", question: "What box does the black big boss start on?", answer: "e8 box", wrong: ["d8 box", "e7 box"], reward: 10 },
+    { id: 20, type: "chess", question: "How many big bosses are on the grid?", answer: "Two bosses", wrong: ["One boss", "Four bosses"], reward: 10 },
+    { id: 21, type: "chess", question: "What piece cannot be captured?", answer: "The big boss", wrong: ["Boss's boss", "Sacrifice guy"], reward: 10 },
+    { id: 22, type: "chess", question: "What is the king hideaway?", answer: "Boss safety", wrong: ["Guy move", "Piece capture"], reward: 10 },
+    { id: 23, type: "chess", question: "What notation do nerd lords use?", answer: "Nerd code", wrong: ["Old code", "Binary code"], reward: 10 },
+    { id: 24, type: "chess", question: "What is the French cheat code (en passant)?", answer: "Guy capture", wrong: ["Hideaway", "Leveling up"], reward: 10 },
+    { id: 25, type: "chess", question: "What is leveling up (promotion)?", answer: "New piece", wrong: ["Hideaway", "Total annihilation"], reward: 10 },
+    { id: 26, type: "chess", question: "When can leveling up happen?", answer: "Last rank", wrong: ["Middle rank", "First rank"], reward: 10 },
+    { id: 27, type: "chess", question: "What is the early game scramble?", answer: "Game start", wrong: ["Game end", "Main fight"], reward: 10 },
+    { id: 28, type: "chess", question: "What is the chaos phase (middlegame)?", answer: "Main phase", wrong: ["Start", "Finish"], reward: 10 },
+    { id: 29, type: "chess", question: "What is the initial setup called?", answer: "Starting line", wrong: ["Finish line", "Total annihilation"], reward: 10 },
+    { id: 30, type: "chess", question: "What is the cleanup crew phase (endgame)?", answer: "Few pieces", wrong: ["Many pieces", "Start"], reward: 10 },
+    { id: 31, type: "chess", question: "What is a double poke (fork)?", answer: "Double attack", wrong: ["Single attack", "Defense"], reward: 10 },
+    { id: 32, type: "chess", question: "What is being stuck in place (pin)?", answer: "Restricted piece", wrong: ["Free piece", "Jumping piece"], reward: 10 },
+    { id: 33, type: "chess", question: "What is a kebab move (skewer)?", answer: "Reverse pin", wrong: ["Double poke", "Sacrifice"], reward: 10 },
+    { id: 34, type: "chess", question: "What happens when a guy reaches the last rank?", answer: "Leveling up", wrong: ["Hideaway", "Awkward tie"], reward: 10 },
+    { id: 35, type: "chess", question: "What is a bad luck move (zugzwang)?", answer: "Forced move", wrong: ["Free move", "No move"], reward: 10 },
+    { id: 36, type: "chess", question: "What is risky business (gambit)?", answer: "Guy sacrifice", reward: 10, wrong: ["Piece trade", "Blunder"] },
+    { id: 37, type: "chess", question: "What is a runner (passed pawn)?", answer: "No blockers", reward: 10, wrong: ["Captured guy", "Blocked guy"] },
+    { id: 38, type: "chess", question: "What piece can jump others?", answer: "The horse", reward: 10, wrong: ["The castle thing", "The pointy dude"] },
+    { id: 39, type: "chess", question: "What is a surprise attack (discovered)?", answer: "Hidden attack", reward: 10, wrong: ["Direct attack", "Blunder"] },
+    { id: 40, type: "chess", question: "What is fancy cornering (fianchetto)?", answer: "Pointy dude move", reward: 10, wrong: ["Boss move", "Guy storm"] },
+    { id: 41, type: "chess", question: "What is total annihilation protection called?", answer: "Boss defense", reward: 10, wrong: ["Attacking", "Trading"] },
+    { id: 42, type: "chess", question: "What is illegal to ignore?", answer: "Check", reward: 10, wrong: ["Trade", "Guy move"] },
+    { id: 43, type: "chess", question: "What is a draw by high-fiving (agreement)?", answer: "Mutual draw", reward: 10, wrong: ["Forced draw", "Win"] },
+    { id: 44, type: "chess", question: "What is the Nerd Council?", answer: "World game federation", reward: 10, wrong: ["Free games", "Football federation"] },
+    { id: 45, type: "chess", question: "What is speedy thinking (blitz)?", answer: "Fast game", reward: 10, wrong: ["Slow game", "Classical"] },
+    { id: 46, type: "chess", question: "What is insane speed (bullet)?", answer: "Very fast", reward: 10, wrong: ["Rapid", "Slow"] },
+    { id: 47, type: "chess", question: "How many points is a boss's boss worth?", answer: "Nine points", reward: 10, wrong: ["Five points", "Ten points"] },
+    { id: 48, type: "chess", question: "How many points is a castle thing worth?", answer: "Five points", reward: 10, wrong: ["Three points", "Nine points"] },
+    { id: 49, type: "chess", question: "How many points is a pointy dude worth?", answer: "Three points", reward: 10, wrong: ["Five points", "One point"] },
+    { id: 50, type: "chess", question: "Who is the top nerd (2024)?", answer: "Ding Liren", reward: 10, wrong: ["Magnus Carlsen", "Hikaru Nakamura"] },
     { id: 51, type: "football", question: "How many players per team?", answer: "Eleven players", reward: 10, wrong: ["Seven players", "Fifteen players"] },
     { id: 52, type: "football", question: "How long is a match?", answer: "Ninety minutes", reward: 10, wrong: ["Sixty minutes", "Eighty minutes"] },
     { id: 53, type: "football", question: "How many halves are played?", answer: "Two halves", reward: 10, wrong: ["Four quarters", "Three periods"] },
@@ -326,318 +326,467 @@ const QUIZ_POOL = [
     { id: 147, type: "basketball", question: "What is possession arrow?", answer: "Tie-break rule", reward: 10, wrong: ["Jump ball", "Referee call"] },
     { id: 148, type: "basketball", question: "What is a timeout?", answer: "Game pause", reward: 10, wrong: ["Quarter end", "Foul"] },
     { id: 149, type: "basketball", question: "What jersey number is Jordan known for?", answer: "Number 23", reward: 10, wrong: ["Number 45", "Number 33"] },
-    { id: 150, type: "basketball", question: "Which team has most NBA titles?", answer: "Boston Celtics", reward: 10, wrong: ["LA Lakers", "Chicago Bulls"] }
+    { id: 150, type: "basketball", question: "Which team has most NBA titles?", answer: "Boston Celtics", reward: 10, wrong: ["LA Lakers", "Chicago Bulls"] },
+
+    // --- CHESS (151-200) ---
+    { id: 151, type: "chess", question: "What is a 'mega oopsie'?", answer: "A terrible move", reward: 10, wrong: ["A brilliant sacrifice", "A type of early scramble"] },
+    { id: 152, type: "chess", question: "Which piece is often called a 'horse' by noobs?", answer: "The horse", reward: 10, wrong: ["Pointy dude", "Castle thing"] },
+    { id: 153, type: "chess", question: "What is the '4-move annihilation'?", answer: "Quick game over", reward: 10, wrong: ["A 100-move draw", "A specific early scramble"] },
+    { id: 154, type: "chess", question: "What is a 'nerd lord'?", answer: "Highest game title", reward: 10, wrong: ["A game coach", "A player who never loses"] },
+    { id: 155, type: "chess", question: "What does it mean to 'admit defeat'?", answer: "To give up", reward: 10, wrong: ["To offer a draw", "To pause the game"] },
+    { id: 156, type: "chess", question: "Which piece cannot move backwards?", answer: "Sacrifice guy", reward: 10, wrong: ["The horse", "Big boss"] },
+    { id: 157, type: "chess", question: "What is a 'brilliant' move?", answer: "Best sacrifice", reward: 10, wrong: ["A random move", "Capturing a little guy"] },
+    { id: 158, type: "chess", question: "What is 'bullet' game time control?", answer: "1 minute or less", reward: 10, wrong: ["10 minutes", "1 hour"] },
+    { id: 159, type: "chess", question: "What is 'speed' gaming called?", answer: "Blitz", reward: 10, wrong: ["Slow", "Turtling"] },
+    { id: 160, type: "chess", question: "What is a 'nerd score'?", answer: "Skill level number", reward: 10, wrong: ["Number of wins", "Age of player"] },
+    { id: 161, type: "chess", question: "Who is 'Magnus Carlsen'?", answer: "The goat nerd lord", reward: 10, wrong: ["A ball kicker", "A wooden piece"] },
+    { id: 162, type: "chess", question: "What is the 'Sicilian Defense'?", answer: "A popular early scramble", reward: 10, wrong: ["A type of annihilation", "A defensive wall"] },
+    { id: 163, type: "chess", question: "What is the 'French cheat code'?", answer: "Little guy capture rule", reward: 10, wrong: ["A fancy dance", "A way to draw"] },
+    { id: 164, type: "chess", question: "What is an 'awkward tie'?", answer: "A type of draw", reward: 10, wrong: ["A win for white", "A loss for black"] },
+    { id: 165, type: "chess", question: "What is 'king hideaway'?", answer: "Big boss & castle thing move", reward: 10, wrong: ["Boss's boss & big boss move", "Two castle thing swap"] },
+    { id: 166, type: "chess", question: "What is a 'fork' in this game?", answer: "Attacking two pieces", reward: 10, wrong: ["Eating lunch", "Trading boss's bosses"] },
+    { id: 167, type: "chess", question: "What is a 'pin'?", answer: "Trapping a piece", reward: 10, wrong: ["Winning a little guy", "Using a clock"] },
+    { id: 168, type: "chess", question: "What is a 'skewer'?", answer: "Attacking through", reward: 10, wrong: ["Losing a horse", "A type of board"] },
+    { id: 169, type: "chess", question: "What is 'chaos phase'?", answer: "Phase after early scramble", reward: 10, wrong: ["The very end", "The first move"] },
+    { id: 170, type: "chess", question: "What is 'cleanup crew phase'?", answer: "Few pieces left", reward: 10, wrong: ["Start of game", "A Marvel movie"] },
+    { id: 171, type: "chess", question: "What is a 'sac'?", answer: "Short for sacrifice", reward: 10, wrong: ["A bag of pieces", "A type of move"] },
+    { id: 172, type: "chess", question: "What is 'scramble theory'?", answer: "Studied first moves", reward: 10, wrong: ["Guessing moves", "A science class"] },
+    { id: 173, type: "chess", question: "What is 'Nerd Points'?", answer: "Rating system", reward: 10, wrong: ["Electric Light Orchestra", "A player name"] },
+    { id: 174, type: "chess", question: "What is a 'candidate'?", answer: "Player in qualifiers", reward: 10, wrong: ["A beginner", "A wooden piece"] },
+    { id: 175, type: "chess", question: "What is the 'London System'?", answer: "A solid early scramble", reward: 10, wrong: ["A city train", "A type of clock"] },
+    { id: 176, type: "chess", question: "What is a 'fianchetto'?", answer: "Pointy dude on long diagonal", reward: 10, wrong: ["A small little guy", "A type of pasta"] },
+    { id: 177, type: "chess", question: "What is 'mating' in this game?", answer: "Delivering total annihilation", reward: 10, wrong: ["Finding a partner", "Trading pieces"] },
+    { id: 178, type: "chess", question: "What is a 'double poke'?", answer: "Two pieces attacking", reward: 10, wrong: ["Checking twice", "A safe move"] },
+    { id: 179, type: "chess", question: "What is 'underpromotion'?", answer: "Leveling up to non-boss's boss", reward: 10, wrong: ["Losing a little guy", "Leveling up late"] },
+    { id: 180, type: "chess", question: "What is a 'nerd lord draw'?", answer: "A quick boring draw", reward: 10, wrong: ["A brilliant win", "A 100-move fight"] },
+    { id: 181, type: "chess", question: "What is 'tilting'?", answer: "Playing worse due to anger", reward: 10, wrong: ["Moving the board", "A winning streak"] },
+    { id: 182, type: "chess", question: "What is a 'smothered annihilation'?", answer: "Annihilation by a horse", reward: 10, wrong: ["Annihilation by a boss's boss", "Annihilation with no pieces"] },
+    { id: 183, type: "chess", question: "What is a 'back rank annihilation'?", answer: "Annihilation on the 1st/8th rank", reward: 10, wrong: ["Annihilation from behind", "Annihilation with a little guy"] },
+    { id: 184, type: "chess", question: "What is an 'aggressive' player?", answer: "Tricky nerd", reward: 10, wrong: ["Slow & boring", "Defensive only"] },
+    { id: 185, type: "chess", question: "What is a 'positional' player?", answer: "Strategic & slow", reward: 10, wrong: ["Wild & crazy", "Fastest player"] },
+    { id: 186, type: "chess", question: "What is the 'Queen's Gambit'?", answer: "Sacrificing a little guy", reward: 10, wrong: ["A Netflix show only", "A boss's boss trade"] },
+    { id: 187, type: "chess", question: "What is 'time pressure'?", answer: "Low time on clock", reward: 10, wrong: ["Pushing the clock", "Being nervous"] },
+    { id: 188, type: "chess", question: "What is a 'game engine'?", answer: "AI that plays the game", reward: 10, wrong: ["A car part", "A physical clock"] },
+    { id: 189, type: "chess", question: "What is 'Stockfish'?", answer: "The best game AI", reward: 10, wrong: ["A type of meal", "A player name"] },
+    { id: 190, type: "chess", question: "What is a 'premove'?", answer: "Moving before turn", reward: 10, wrong: ["Thinking fast", "Moving twice"] },
+    { id: 191, type: "chess", question: "What is 'hypermodern' gaming?", answer: "Controlling center from afar", reward: 10, wrong: ["Modern board design", "Playing very fast"] },
+    { id: 192, type: "chess", question: "What is 'classical' gaming?", answer: "Long time controls", reward: 10, wrong: ["Old board sets", "Boring games"] },
+    { id: 193, type: "chess", question: "What is the 'French Defense'?", answer: "Solid e6 early scramble", reward: 10, wrong: ["A type of surrender", "A hideaway move"] },
+    { id: 194, type: "chess", question: "What is a 'discovered poke'?", answer: "Moving to reveal poke", reward: 10, wrong: ["Finding a poke", "Poking twice"] },
+    { id: 195, type: "chess", question: "What is a 'zwischenzug'?", answer: "An in-between move", reward: 10, wrong: ["A type of piece", "A German player"] },
+    { id: 196, type: "chess", question: "What is 'perpetual poke'?", answer: "Endless pokes (draw)", reward: 10, wrong: ["A winning poke", "A hidden poke"] },
+    { id: 197, type: "chess", question: "What is a 'runner'?", answer: "No enemy little guys ahead", reward: 10, wrong: ["A guy that died", "A traded guy"] },
+    { id: 198, type: "chess", question: "What is 'opposition' in this game?", answer: "Big bosses facing each other", reward: 10, wrong: ["The other player", "A type of attack"] },
+    { id: 199, type: "chess", question: "What is a 'bad pointy dude'?", answer: "Blocked by own little guys", reward: 10, wrong: ["A pointy dude that blunders", "A mean player"] },
+    { id: 200, type: "chess", question: "What is 'the exchange'?", answer: "Trading minor for major piece", reward: 10, wrong: ["Trading boss's bosses", "Trading places"] },
+
+    // --- FOOTBALL (201-250) ---
+    { id: 201, type: "football", question: "Who has the most Ballon d'Ors?", answer: "Lionel Messi", reward: 10, wrong: ["Cristiano Ronaldo", "Pele"] },
+    { id: 202, type: "football", question: "What is a 'clean sheet'?", answer: "Zero goals conceded", reward: 10, wrong: ["A new jersey", "Winning 1-0"] },
+    { id: 203, type: "football", question: "What is ' Fergie Time'?", answer: "Late winning goals", reward: 10, wrong: ["Time to eat", "A type of sub"] },
+    { id: 204, type: "football", question: "Which club has most UCLs?", answer: "Real Madrid", reward: 10, wrong: ["AC Milan", "Liverpool"] },
+    { id: 205, type: "football", question: "What is a 'Panenka'?", answer: "A chipped penalty", reward: 10, wrong: ["A type of foul", "A stadium name"] },
+    { id: 206, type: "football", question: "Who is the 'Special One'?", answer: "Jose Mourinho", reward: 10, wrong: ["Pep Guardiola", "Jurgen Klopp"] },
+    { id: 207, type: "football", question: "What is 'tiki-taka'?", answer: "Short passing style", reward: 10, wrong: ["A brand of candy", "A defensive wall"] },
+    { id: 208, type: "football", question: "What is a 'nutmeg'?", answer: "Ball between legs", reward: 10, wrong: ["A type of spice", "A header goal"] },
+    { id: 209, type: "football", question: "Which country won 2014 WC?", answer: "Germany", reward: 10, wrong: ["Argentina", "Brazil"] },
+    { id: 210, type: "football", question: "What is 'parking the bus'?", answer: "Ultra-defensive play", reward: 10, wrong: ["Driving to game", "Buying players"] },
+    { id: 211, type: "football", question: "Who scored the 'Hand of God'?", answer: "Diego Maradona", reward: 10, wrong: ["Pele", "Messi"] },
+    { id: 212, type: "football", question: "What is a 'hat-trick'?", answer: "3 goals in a game", reward: 10, wrong: ["2 goals", "Winning 3-0"] },
+    { id: 213, type: "football", question: "Which league is 'La Liga'?", answer: "Spanish League", reward: 10, wrong: ["English League", "Italian League"] },
+    { id: 214, type: "football", question: "What is 'El Clasico'?", answer: "Real Madrid vs Barca", reward: 10, wrong: ["Milan vs Inter", "Liverpool vs Utd"] },
+    { id: 215, type: "football", question: "Who is the all-time top scorer?", answer: "Cristiano Ronaldo", reward: 10, wrong: ["Lionel Messi", "Pele"] },
+    { id: 216, type: "football", question: "What is a 'brace'?", answer: "2 goals in a game", reward: 10, wrong: ["3 goals", "A dental tool"] },
+    { id: 217, type: "football", question: "What is the 'Golden Boot'?", answer: "Top scorer award", reward: 10, wrong: ["Best goalie award", "Most fouls award"] },
+    { id: 218, type: "football", question: "Who is 'Zlatan'?", answer: "A god (self-proclaimed)", reward: 10, wrong: ["A normal player", "A coach"] },
+    { id: 219, type: "football", question: "What is a 'tackle'?", answer: "Stealing the ball", reward: 10, wrong: ["Hitting a player", "A type of pass"] },
+    { id: 220, type: "football", question: "What is 'offside'?", answer: "Being behind defenders", reward: 10, wrong: ["Outside the pitch", "Touching the ball"] },
+    { id: 221, type: "football", question: "What is 'VAR'?", answer: "Video review system", reward: 10, wrong: ["A type of ball", "Virtual reality"] },
+    { id: 222, type: "football", question: "Which club is 'The Blues'?", answer: "Chelsea", reward: 10, wrong: ["Man City", "Everton"] },
+    { id: 223, type: "football", question: "Which club is 'The Red Devils'?", answer: "Manchester United", reward: 10, wrong: ["Liverpool", "Arsenal"] },
+    { id: 224, type: "football", question: "What is a 'clean' tackle?", answer: "Touching ball first", reward: 10, wrong: ["No grass stains", "A soft touch"] },
+    { id: 225, type: "football", question: "What is a 'tap-in'?", answer: "Easy close-range goal", reward: 10, wrong: ["A long shot", "A header"] },
+    { id: 226, type: "football", question: "Who is 'Neymar'?", answer: "Brazilian skill star", reward: 10, wrong: ["A French goalie", "A referee"] },
+    { id: 227, type: "football", question: "What is 'Injury Time'?", answer: "Extra time at end", reward: 10, wrong: ["Time to heal", "Half time"] },
+    { id: 228, type: "football", question: "What is a 'bicycle kick'?", answer: "Overhead shot", reward: 10, wrong: ["Kicking a bike", "A low shot"] },
+    { id: 229, type: "football", question: "What is 'The Invincibles'?", answer: "Arsenal 03/04", reward: 10, wrong: ["Man City 2023", "Real Madrid 2017"] },
+    { id: 230, type: "football", question: "Who is 'Kylian Mbappe'?", answer: "French speedster", reward: 10, wrong: ["An old legend", "A goalie"] },
+    { id: 231, type: "football", question: "What is a 'corner'?", answer: "Kick from corner flag", reward: 10, wrong: ["A type of foul", "A throw-in"] },
+    { id: 232, type: "football", question: "What is a 'goal-line' tech?", answer: "Checks if ball in", reward: 10, wrong: ["A type of VAR", "A camera only"] },
+    { id: 233, type: "football", question: "Who is 'Erling Haaland'?", answer: "Norwegian goal bot", reward: 10, wrong: ["A Swedish defender", "A coach"] },
+    { id: 234, type: "football", question: "What is 'Gegenpressing'?", answer: "Heavy metal football", reward: 10, wrong: ["Slow passing", "Parking the bus"] },
+    { id: 235, type: "football", question: "What is a 'relegation'?", answer: "Moving down a league", reward: 10, wrong: ["Winning the cup", "Retiring"] },
+    { id: 236, type: "football", question: "What is 'promotion'?", answer: "Moving up a league", reward: 10, wrong: ["Getting a raise", "Winning a game"] },
+    { id: 237, type: "football", question: "Who is 'Luka Modric'?", answer: "Croatian midfield maestro", reward: 10, wrong: ["A striker", "A defender"] },
+    { id: 238, type: "football", question: "What is a 'wall'?", answer: "Players blocking freekick", reward: 10, wrong: ["A brick structure", "The goalie only"] },
+    { id: 239, type: "football", question: "What is 'diving'?", answer: "Faking a foul", reward: 10, wrong: ["Swimming", "A header"] },
+    { id: 240, type: "football", question: "What is 'The Treble'?", answer: "3 major trophies", reward: 10, wrong: ["3 goals", "Winning 3 games"] },
+    { id: 241, type: "football", question: "Who is 'Harry Kane'?", answer: "English goal machine", reward: 10, wrong: ["A goalie", "A German defender"] },
+    { id: 242, type: "football", question: "What is 'Anfield'?", answer: "Liverpool's stadium", reward: 10, wrong: ["Man Utd's stadium", "A player"] },
+    { id: 243, type: "football", question: "What is 'Old Trafford'?", answer: "Man Utd's stadium", reward: 10, wrong: ["A museum", "Liverpool's ground"] },
+    { id: 244, type: "football", question: "What is a 'scorpian kick'?", answer: "Heel kick over head", reward: 10, wrong: ["A low kick", "A bug's move"] },
+    { id: 245, type: "football", question: "Who is 'Robert Lewandowski'?", answer: "Polish striker", reward: 10, wrong: ["A German goalie", "A coach"] },
+    { id: 246, type: "football", question: "What is a 'transfer window'?", answer: "Time to buy players", reward: 10, wrong: ["A literal window", "End of season"] },
+    { id: 247, type: "football", question: "What is 'The FA Cup'?", answer: "English knockout cup", reward: 10, wrong: ["The Premier League", "A friendly cup"] },
+    { id: 248, type: "football", question: "Who is 'Vinicius Jr'?", answer: "Real Madrid star", reward: 10, wrong: ["A Barca legend", "A goalie"] },
+    { id: 249, type: "football", question: "What is 'The Ballon d'Or'?", answer: "Best player award", reward: 10, wrong: ["Best goal award", "A gold ball"] },
+    { id: 250, type: "football", question: "What is a 'screamer'?", answer: "A long-range banger", reward: 10, wrong: ["A loud fan", "A foul"] },
+
+    // --- BASKETBALL (251-300) ---
+    { id: 251, type: "basketball", question: "Who is the 'King'?", answer: "LeBron James", reward: 10, wrong: ["Michael Jordan", "Steph Curry"] },
+    { id: 252, type: "basketball", question: "What is a 'triple-double'?", answer: "10+ in 3 categories", reward: 10, wrong: ["30 points", "3 dunks"] },
+    { id: 253, type: "basketball", question: "Who is the 'Chef'?", answer: "Steph Curry", reward: 10, wrong: ["Kevin Durant", "LeBron"] },
+    { id: 254, type: "basketball", question: "What is a 'layup'?", answer: "Close-range shot", reward: 10, wrong: ["A 3-pointer", "A dunk"] },
+    { id: 255, type: "basketball", question: "What is 'The Finals'?", answer: "Championship series", reward: 10, wrong: ["Last game of season", "The playoffs"] },
+    { id: 256, type: "basketball", question: "Who is 'Giannis'?", answer: "The Greek Freak", reward: 10, wrong: ["The Italian Stallion", "The Big Man"] },
+    { id: 257, type: "basketball", question: "What is a 'swish'?", answer: "Ball hitting only net", reward: 10, wrong: ["Ball hitting rim", "A missed shot"] },
+    { id: 258, type: "basketball", question: "What is 'March Madness'?", answer: "College tournament", reward: 10, wrong: ["NBA playoffs", "Angry players"] },
+    { id: 259, type: "basketball", question: "Who is 'KD'?", answer: "Kevin Durant", reward: 10, wrong: ["Kyrie Durant", "Klay Durant"] },
+    { id: 260, type: "basketball", question: "What is a 'technical' foul?", answer: "Unsportsmanlike act", reward: 10, wrong: ["Hitting a player", "Traveling"] },
+    { id: 261, type: "basketball", question: "Who is 'The Joker'?", answer: "Nikola Jokic", reward: 10, wrong: ["LeBron", "Luka"] },
+    { id: 262, type: "basketball", question: "What is a 'fadeaway'?", answer: "Jumping backwards", reward: 10, wrong: ["Jumping forward", "Falling down"] },
+    { id: 263, type: "basketball", question: "Who is 'Luka Magic'?", answer: "Luka Doncic", reward: 10, wrong: ["Luka Modric", "Luka S."] },
+    { id: 264, type: "basketball", question: "What is 'and-one'?", answer: "Fouled while scoring", reward: 10, wrong: ["A brand of shoes", "Getting 2 points"] },
+    { id: 265, type: "basketball", question: "Who is 'Dame Time'?", answer: "Damian Lillard", reward: 10, wrong: ["Stephen Curry", "Kyrie"] },
+    { id: 266, type: "basketball", question: "What is a 'double-double'?", answer: "10+ in 2 categories", reward: 10, wrong: ["20 points", "2 dunks"] },
+    { id: 267, type: "basketball", question: "What is 'the paint'?", answer: "Area near hoop", reward: 10, wrong: ["Literal paint", "Outside 3-point line"] },
+    { id: 268, type: "basketball", question: "Who is 'The Beard'?", answer: "James Harden", reward: 10, wrong: ["Anthony Davis", "LeBron"] },
+    { id: 269, type: "basketball", question: "What is a 'brick'?", answer: "A very bad miss", reward: 10, wrong: ["A solid player", "A type of ball"] },
+    { id: 270, type: "basketball", question: "Who is 'Kyrie'?", answer: "The handles master", reward: 10, wrong: ["A goalie", "A dunker"] },
+    { id: 271, type: "basketball", question: "What is 'downtime'?", answer: "Rest between quarters", reward: 10, wrong: ["Time to dunk", "Half time"] },
+    { id: 272, type: "basketball", question: "What is a 'poster'?", answer: "Dunking on someone", reward: 10, wrong: ["A wall decoration", "A 3-pointer"] },
+    { id: 273, type: "basketball", question: "Who is 'AD'?", answer: "Anthony Davis", reward: 10, wrong: ["Andre Drummond", "Alexuso"] },
+    { id: 274, type: "basketball", question: "What is a 'steal'?", answer: "Taking the ball away", reward: 10, wrong: ["Cheating", "A block"] },
+    { id: 275, type: "basketball", question: "What is a 'block'?", answer: "Swatting a shot", reward: 10, wrong: ["A defensive move", "A foul"] },
+    { id: 276, type: "basketball", question: "Who is 'The Process'?", answer: "Joel Embiid", reward: 10, wrong: ["Ben Simmons", "Harden"] },
+    { id: 277, type: "basketball", question: "What is 'clutch'?", answer: "Good in final mins", reward: 10, wrong: ["A car part", "Angry"] },
+    { id: 278, type: "basketball", question: "What is 'garbage time'?", answer: "End of blowout game", reward: 10, wrong: ["Time to clean", "Pre-game"] },
+    { id: 279, type: "basketball", question: "Who is 'Klay'?", answer: "The other Splash Bro", reward: 10, wrong: ["A clay model", "A coach"] },
+    { id: 280, type: "basketball", question: "What is a 'dime'?", answer: "A great assist", reward: 10, wrong: ["10 points", "A small coin"] },
+    { id: 281, type: "basketball", question: "Who is 'Spida'?", answer: "Donovan Mitchell", reward: 10, wrong: ["Peter Parker", "Trae Young"] },
+    { id: 282, type: "basketball", question: "What is a 'flop'?", answer: "Faking contact", reward: 10, wrong: ["A missed dunk", "Falling down"] },
+    { id: 283, type: "basketball", question: "Who is 'Ice Trae'?", answer: "Trae Young", reward: 10, wrong: ["An ice cube", "Luka Doncic"] },
+    { id: 284, type: "basketball", question: "What is a 'fastbreak'?", answer: "Quick counter attack", reward: 10, wrong: ["Breaking fast", "A long break"] },
+    { id: 285, type: "basketball", question: "Who is 'The Claw'?", answer: "Kawhi Leonard", reward: 10, wrong: ["LeBron", "A cat"] },
+    { id: 286, type: "basketball", question: "What is a 'pump fake'?", answer: "Faking a shot", reward: 10, wrong: ["Pumping air", "A real shot"] },
+    { id: 287, type: "basketball", question: "Who is 'Ja'?", answer: "Ja Morant", reward: 10, wrong: ["Jar Rule", "Ja Master"] },
+    { id: 288, type: "basketball", question: "What is 'The Logo'?", answer: "Jerry West", reward: 10, wrong: ["Michael Jordan", "LeBron"] },
+    { id: 289, type: "basketball", question: "Who is 'Zion'?", answer: "Dunking powerhouse", reward: 10, wrong: ["A mountain", "A goalie"] },
+    { id: 290, type: "basketball", question: "What is 'sixth man'?", answer: "Best bench player", reward: 10, wrong: ["The referee", "A fan"] },
+    { id: 291, type: "basketball", question: "Who is 'Wemby'?", answer: "Victor Wembanyama", reward: 10, wrong: ["A French bread", "A defender"] },
+    { id: 292, type: "basketball", question: "What is 'box out'?", answer: "Blocking for rebound", reward: 10, wrong: ["Boxing a player", "Leaving the court"] },
+    { id: 293, type: "basketball", question: "Who is 'CP3'?", answer: "Chris Paul", reward: 10, wrong: ["A robot", "Cliff Paul"] },
+    { id: 294, type: "basketball", question: "What is a 'screen'?", answer: "Blocking for teammate", reward: 10, wrong: ["A TV", "A foul"] },
+    { id: 295, type: "basketball", question: "Who is 'The Brow'?", answer: "Anthony Davis", reward: 10, wrong: ["James Harden", "LeBron"] },
+    { id: 296, type: "basketball", question: "What is 'iso'?", answer: "One-on-one play", reward: 10, wrong: ["Isolated court", "A foul"] },
+    { id: 297, type: "basketball", question: "Who is 'Bam'?", answer: "Bam Adebayo", reward: 10, wrong: ["A sound effect", "A coach"] },
+    { id: 298, type: "basketball", question: "What is 'full court press'?", answer: "Defending whole court", reward: 10, wrong: ["A media event", "A long shot"] },
+    { id: 299, type: "basketball", question: "Who is 'Book'?", answer: "Devin Booker", reward: 10, wrong: ["A literal book", "A goalie"] },
+    { id: 300, type: "basketball", question: "What is a 'double team'?", answer: "2 players on 1", reward: 10, wrong: ["2 teams playing", "A foul"] },
 ];
 
-const SHOP = [
-    { name: 'Chess Beginner', description: 'Starter role for new players.', price: 25, roleId: '1455250623510614157' },
-    { name: 'Chess Improver', description: 'Shows dedication to improving.', price: 75, roleId: '1455250690892107961' },
-    { name: 'Chess Pro', description: 'Recognizes strong consistent play.', price: 200, roleId: '1455250740653330453' },
-    { name: 'Chess Master', description: 'Highlights elite skill and strategy.', price: 500, roleId: '1455250877999747214' },
-    { name: 'Chess GOAT', description: 'Top-tier recognition across the server.', price: 1000, roleId: '1455250931473191148' }
-];
 
 const PLAYERS_CHESS_TEXT = `
 1. Magnus Carlsen
-Youngest world No. 1 in history
-Dominated classical, rapid, and blitz simultaneously
-Slammed the table vs Gukesh (2023)
-Voluntarily gave up the world title
-Famous for squeezing wins from equal endgames
+Youngest King of the Nerds in history
+Dominated slow mode, fast mode, and panic mode simultaneously
+Slammed the table during a high-stakes nerd battle (2023)
+Voluntarily gave up the Lord of the Grid title
+Famous for squeezing wins from boring equal situations
 2. Garry Kasparov
-Youngest world champion at the time
-Symbol of aggressive, dynamic chess
-Historic matches vs Deep Blue
-Ruled the rating list for over 20 years
-Became a political activist after retiring
+Youngest Supreme Nerd at the time
+Symbol of aggressive, scary grid play
+Historic matches vs a literal computer (and lost once, lol)
+Ruled the nerd rankings for over 20 years
+Became a professional arguer after retiring
 3. Bobby Fischer
-Only American world champion
-Ended Soviet dominance in 1972
-Perfect 6–0–6 Candidates run
-Extremely controversial personality
-Vanished from elite chess after his title
+Only American to conquer the Soviet Grid Machines
+Ended nerd dominance in 1972
+Perfect 6–0–6 run in the Nerd Hunger Games
+Extremely spicy and controversial personality
+Vanished into thin air after winning the shiny trophy
 4. Anatoly Karpov
-Master of prophylactic chess
-Became world champion without a match (1975)
-Legendary rivalry with Kasparov
-Incredible tournament consistency
-Famous for slowly suffocating opponents
+Master of "don't touch my stuff" grid play
+Became Lord of the Grid because the other guy didn't show up (1975)
+Legendary rivalry with the aggressive guy (Kasparov)
+Incredible consistency at sitting in a chair for hours
+Famous for slowly suffocating opponents' hopes and dreams
 5. Vladimir Kramnik
-Ended Kasparov’s reign
-Popularized the Berlin Defense
-Deep positional understanding
-Later involved in cheating controversies
-Elite opening theoretician
+Ended the reign of the previous Nerd Boss
+Popularized the "nothing is happening" defense
+Deep understanding of where to put the wooden pieces
+Later involved in "is he cheating?" internet drama
+Elite theorist of the first 5 seconds of the game
 6. Viswanathan Anand
-India’s first world champion
-Extremely fast calculator
-World champion in three different formats
-Known for mental resilience
-National icon in India
+The first Supreme Nerd from India
+Extremely fast brain calculator
+Lord of the Grid in three different speeds of thinking
+Known for not panicking when the clock goes tick-tock
+National icon for being smart
 7. Hikaru Nakamura
-One of the best blitz players ever
-Twitch & YouTube chess superstar
-Known for speed and trash talk
-Candidates comeback in 2022
-Online chess legend
+One of the best "Speed Panic" players ever
+Twitch & YouTube superstar for board game nerds
+Known for moving fast and talking trash
+Made a comeback in the 2022 Hunger Games
+Online clicking legend
 8. Fabiano Caruana
-Came closest to beating Magnus (2018)
-Rating peak over 2840
-Extremely precise opening prep
-Known for deep preparation
-Calm, analytical style
+Came closest to beating the final boss Magnus (2018)
+Reached a "super nerd" rating peak
+Extremely precise research on the first few moves
+Known for staying up all night studying wooden squares
+Calm, robotic style of play
 9. Ding Liren
-China’s first world champion
-Famous 100+ game unbeaten streak
-Very calm playing style
-Overcame serious mental struggles
-Elite defender
+The first Lord of the Grid from China
+Famous 100+ game "you can't beat me" streak
+Very quiet and humble for a top-tier nerd
+Overcame serious "I don't want to play" vibes
+Elite at not losing
 10. Alireza Firouzja
-Youngest player to reach 2800
-Switched federations from Iran to France
-Ultra-aggressive style
-Fashion designer on the side
-Touted as a future world champion
+Youngest player to reach "mega nerd" status
+Switched teams from Iran to France for more freedom
+Ultra-aggressive "I will fight you" style
+Fashion designer because being a nerd wasn't enough
+Touted as the future Ruler of the Grid
 11. Mikhail Tal
-“The Magician from Riga”
-Sacrificed pieces without full calculation
-World champion in 1960
-Pure intuition and chaos
-Crowd favorite
+“The Magician from a place called Riga”
+Threw away his pieces just to cause chaos
+Supreme Nerd in 1960
+Pure intuition and "I hope this works" energy
+Everyone's favorite chaotic neutral player
 12. José Raúl Capablanca
-Natural chess genius
-Minimal theory, maximum dominance
-Legendary endgame technique
-Very long unbeaten streaks
-Third world champion
+Naturally gifted at moving wooden blocks
+Minimum studying, maximum winning
+Legendary technique at the end of the game
+Very long "I haven't lost in years" streaks
+Third Lord of the Grid
 13. Emanuel Lasker
-Longest-reigning world champion (27 years)
-Philosopher and mathematician
-Psychological approach to chess
-Defeated multiple generations
-Extremely pragmatic
+Longest-reigning Nerd Boss (27 years)
+Philosopher who thought about the game too much
+Psychological approach: "I'll make you uncomfortable"
+Defeated multiple generations of younger nerds
+Extremely practical and annoying to play against
 14. Alexander Alekhine
-Ferocious attacking world champion
-Never lost the title over the board
-Namesake of the Alekhine Defense
-Brilliant combinations
-Tragic personal life
+Ferocious attacking Nerd Boss
+Never lost his title in an actual fight
+Has a "confuse the opponent" move named after him
+Brilliant at seeing things 20 steps ahead
+Tragic personal life but great at board games
 15. Mikhail Botvinnik
-Father of the Soviet chess school
-Multiple-time world champion
-Mentor to Karpov and Kasparov
-Scientific approach to chess
-Dominated post-war chess
+Father of the Soviet Nerd Factory
+Multiple-time Lord of the Grid
+Teacher to the next generation of top nerds
+Scientific approach to a game about wooden pieces
+Dominated the post-war nerd scene
 16. Wesley So
-Known for sportsmanship
-Elite endgame technician
-Olympiad champion with the USA
-Calm and disciplined style
-Strong mental control
+Known for being a very polite nerd
+Elite technician of the "Final Struggle"
+Olympiad champion for Team USA
+Calm and disciplined "I will not make a mistake" style
+Strong mental control over his own brain
 17. Ian Nepomniachtchi
-Multiple Candidates winner
-Extremely fast decision-maker
-Collapsed in world championship matches
-Highly creative
-Childhood rival of Magnus
+Multiple-time Hunger Games winner
+Extremely fast at making decisions (sometimes bad ones)
+Collapsed when the pressure of the shiny trophy got too high
+Highly creative and unpredictable
+Childhood rival of the final boss Magnus
 18. Levon Aronian
-One of the most beloved players
-Creative sacrifices
-Olympiad champion with Armenia
-Known for humor
-Universal playing style
+One of the most liked guys in the nerd community
+Creative at throwing pieces for a win
+Team champion with Armenia
+Known for telling jokes while winning
+Universal style: can be boring or exciting
 19. Sergey Karjakin
-Youngest grandmaster ever
-World championship challenger (2016)
-Defensive monster
-Political controversies
-Extremely resilient
+Youngest "Senior Grid Specialist" ever
+Challenged for the shiny trophy in 2016
+A literal brick wall of defense
+Got into a lot of political arguments online
+Extremely hard to knock down
 20. Teimour Radjabov
-Beat Kasparov at age 15
-Extremely solid openings
-Longtime Candidates contender
-Cautious playing style
-Strong comeback after long break
+Beat the Boss (Kasparov) when he was just 15
+Extremely solid "nothing gets through" style
+Longtime contender for the top spot
+Cautious style: "safety first, winning second"
+Strong comeback after a long nap
 21. Paul Morphy
-Greatest talent of the 19th century
-Dominated Europe and America
-Attacking genius
-Retired very early
-Legend without a world title
+Greatest nerd of the 1800s
+Dominated everyone across the ocean
+Attacking genius before people knew how to defend
+Retired early to be a lawyer (boring)
+Legend who never got a formal title
 22. Judit Polgár
-Strongest female player ever
-Defeated multiple world champions
-Never played women-only events
-Aggressive attacking style
-Broke gender barriers
+Strongest female nerd to ever touch the grid
+Beat multiple Nerd Bosses
+Refused to play in the "girls only" section
+Aggressive "I will crush you" style
+Broke all the rules about who can be a nerd
 23. Max Euwe
-Mathematician world champion
-Known for fair play
-Defeated Alekhine
-Later became FIDE president
-Logical, structured style
+Mathematician who was also a Nerd Boss
+Known for being a very fair player
+Defeated the scary attacking guy (Alekhine)
+Later became the President of all Nerds
+Logical and structured approach to life
 24. Boris Spassky
-Gentleman world champion
-Lost the legendary match vs Fischer
-Universal playing style
-Politically neutral
-Elegant chess
+The gentlemanly Nerd Boss
+Lost the "Cold War" match to the American guy
+Can play any style: boring, exciting, or weird
+Stayed out of political drama
+Elegant moves on the grid
 25. Veselin Topalov
-Extremely aggressive player
-Dominated San Luis 2005
-World champion that year
-Involved in the Kramnik controversy
+Extremely aggressive "all or nothing" player
+Dominated the big nerd tournament in 2005
+Lord of the Grid for one year
+Involved in "toiletgate" cheating drama (don't ask)
 Tactical powerhouse
 26. Shakhriyar Mamedyarov
-Always plays for a win
-Wild, tactical games
-Fan favorite
-Explosive attacks
-High-risk style
+Always plays for a win, never for a draw
+Wild, chaotic games that make your head hurt
+Fan favorite for being a madman
+Explosive attacks out of nowhere
+High-risk, high-reward nerd energy
 27. Anish Giri
-Opening theory expert
-Famous for chess memes
-Extremely solid
-Long unbeaten streaks
-Elite preparation
+Expert at the first 10 minutes of research
+Famous for making board game memes on Twitter
+Extremely hard to beat, but also hard for him to win
+Long "everything is a draw" streaks
+Elite preparation for every scenario
 28. Gukesh D
-Youngest world championship challenger
-Defeated Magnus multiple times
-Part of India’s golden generation
-Fearless under pressure
-Calm personality
+Youngest person to challenge for the shiny trophy
+Beat the final boss Magnus a bunch of times
+Part of the new wave of super nerds from India
+Fearless even when the scary clock is ticking
+Very calm for a teenager
 29. Praggnanandhaa
-Beat Magnus as a teenager
-Rapid learner
-Strong calculator
-Olympiad hero
-Remarkable maturity
+Beat the final boss Magnus while he was still a kid
+Learns new things at 2x speed
+Strong brain calculator
+National hero for being a prodigy
+Remarkably mature for a young nerd
 30. Vidit Gujrathi
-Candidates participant
-Very solid player
-Excellent team competitor
-Long underrated
-Universal style
+Participant in the Nerd Hunger Games
+Very solid and reliable player
+Excellent at playing on a team
+Underrated for a long time
+Can play any style depending on the mood
 31. Richard Rapport
-Eccentric opening choices
-Highly creative
-Known for colorful outfits
-Chaos-driven chess
-Artistic approach
+Chooses weird moves just to be different
+Highly creative and artistic
+Known for wearing cool shirts to nerd events
+Chaos-driven grid play
+Artistic approach to moving wooden pieces
 32. Jan-Krzysztof Duda
-Ended Magnus’ unbeaten streak
-World Cup finalist
-Strong rapid player
-Fearless competitor
-Excellent endgames
+The guy who finally beat Magnus's win streak
+Reached the final level of the World Cup
+Strong at fast-paced clicking games
+Fearless competitor who doesn't care who you are
+Excellent at the "Final Struggle" part of the game
 33. Yi Wei
-Chinese elite grandmaster
-Positional expert
-Low media presence
-Strong middlegames
-Very solid
+Chinese elite Senior Grid Specialist
+Expert at where to stand on the grid
+Doesn't talk to the media much
+Strong "middle of the game" skills
+Very solid and hard to knock over
 34. Samuel Reshevsky
-Child prodigy
-Tactical fighter
-American legend
-Orthodox Jewish faith
-Extremely long career
+Kid prodigy who grew up to be a legend
+Tactical fighter who never gave up
+American board game icon
+Very religious, didn't play on Saturdays
+Had a career that lasted approximately forever
 35. Tigran Petrosian
-Defensive genius
-Nicknamed “Iron Tigran”
-Sacrificed for defense
-Very hard to beat
-Prophylaxis master
+The ultimate defensive genius
+Nicknamed “Iron Tigran” because he's a wall
+Sacrificed his own stuff just to stay safe
+Very, very, very hard to beat
+Master of "I know what you're trying to do"
 36. David Bronstein
-Nearly became world champion
-Creative thinker
-Major theoretical innovator
-Influential author
-Famous sacrifice ideas
+Almost became the Lord of the Grid
+Thinker who came up with weird ideas
+Innovator of how to play the first 5 minutes
+Author of nerd books people actually read
+Famous for "let's see what happens" moves
 37. Bent Larsen
-Western chess hope
-Highly original openings
-Challenged Soviet dominance
-Fearless attacker
-Unorthodox style
+The hope of the Western nerds
+Highly original and weird moves
+Challenged the Soviet nerd dominance
+Fearless attacker who didn't care about safety
+Unorthodox and fun to watch
 38. Peter Svidler
-Grünfeld Defense expert
-Top-level commentator
-Multiple-time Russian champion
-Known for humor
-Elite theoretician
+Expert at one specific type of defense
+Top-level talker about other people's games
+Multiple-time champion of his country
+Known for having a great sense of humor
+Elite research specialist
 39. Wesley So
-Multiple-time rapid world champion
-Endgame machine
-Extremely clean technique
-Rarely blunders
-Ice-cold nerves
+Multiple-time world champion of "fast clicking"
+A literal machine at the end of the game
+Extremely clean and boring (but winning) technique
+Rarely makes a "mega oopsie"
+Ice-cold nerves under pressure
 40. Hou Yifan
-Strongest active female player
-Competed regularly vs top GMs
-Academic career alongside chess
-Strategic style
-Global role model
+The strongest girl nerd currently playing
+Competed against the top guys regularly
+Gave up being a pro nerd to be a professor
+Strategic and smart style
+Global role model for smart people
 41. Fischer
-Invented Fischer Random (Chess960)
-Hated quick draws
-Opening innovator
-Endgame perfectionist
-Absolute perfectionist mindset
+Invented a version of the game where you shuffle the pieces
+Hated when games ended too fast
+Innovator of the "Early Scramble"
+Perfectionist at the end of the game
+Absolute "it must be perfect" mindset
 42. Viktor Korchnoi
-Fierce lifelong fighter
-Political defector
-Extreme willpower
-Never became world champion
+A guy who fought until he was 80 years old
+Defected from his country to keep playing
+Extreme willpower and grumpiness
+Never became the official Lord of the Grid (sad)
 Legendary mental toughness
 43. Daniil Dubov
-Creative Carlsen second
-Loves sacrifices
-Modern attacking ideas
-Blitz specialist
-Highly unconventional
+Creative assistant to the final boss Magnus
+Loves throwing pieces away for fun
+Modern ideas that confuse old nerds
+Specialist at "Speed Panic" mode
+Highly unconventional and cool
 44. Arjun Erigaisi
-One of the fastest rating climbs ever
-Extremely aggressive
-New-generation star
-Fearless approach
-Strong calculation
+One of the fastest rating climbs in history
+Extremely aggressive "I'm coming for you" style
+New-generation superstar
+Fearless approach to every game
+Strong at calculating scary moves
 45. Nihal Sarin
-Blitz prodigy
-Lightning-fast moves
-Online chess monster
-Tactical vision
-Very young elite
+Prodigy at "Speed Panic" mode
+Moves so fast you can't see his hands
+Online clicking monster
+Tactical vision like a hawk
+Very young and already at the top
 46. Gata Kamsky
-World championship finalist
-Legendary comeback story
-Calm personality
-Solid style
-Long elite career
+Reached the final level for the shiny trophy
+Had a legendary "I'm back" story
+Very calm and quiet personality
+Solid and reliable style
+Had an elite career that lasted decades
 47. Alexander Grischuk
-Famous for time trouble
-Elite blitz player
-Very humorous
-Risk-taking style
-Massive experience
+Famous for using all his time in the first 5 minutes
+Elite at "Speed Panic" games
+Very funny guy in interviews
+Risk-taking style that makes people nervous
+Massive experience at being a top nerd
 48. Nodirbek Abdusattorov
-World Rapid Champion (2021)
-Known for nerves of steel
-Leading the new generation
-Incredible defensive skills
-Extremely focused
+World Fast-Clicking Champion (2021)
+Known for having "nerves of steel"
+Leading the new generation of nerds
+Incredible defensive skills when he's losing
+Extremely focused on the grid
 49. Dommaraju Gukesh
-Youngest Candidates winner
-Challenged for the world title
-Extremely mature for his age
-Part of India's golden era
+Youngest Hunger Games winner ever
+Challenged for the Lord of the Grid title
+Extremely mature for a teenager
+Part of the golden era of Indian nerds
 Incredible calculation speed
 50. Rameshbabu Praggnanandhaa
-Broke into the elite as a teenager
-Known for deep preparation
-Beat Magnus multiple times in rapid
-Olympiad gold medalist
-Incredible endgame player
+Broke into the elite level while still a kid
+Known for studying the game 24/7
+Beat the boss Magnus multiple times in fast mode
+Won a gold medal for his country
+Incredible at the "Final Struggle"
 `;
 
 const PLAYERS_FOOTBALL_TEXT = `
@@ -1284,8 +1433,8 @@ client.once(Events.ClientReady, async () => {
         await client.application.commands.set([
             { name: 'daily', description: 'Claim your daily stipend (25 coins)' },
             { name: 'balance', description: 'Check your or another player\'s treasury balance', options: [{ name: 'user', description: 'User to check', type: ApplicationCommandOptionType.User, required: false }] },
-            { name: 'leaderboard', description: 'View the top strategists (Global or Server)', options: [{ name: 'scope', description: 'Leaderboard scope', type: ApplicationCommandOptionType.String, required: false, choices: [{ name: 'Global', value: 'global' }, { name: 'Server', value: 'server' }] }] },
-            { name: 'shop', description: 'Browse the server\'s elite items and roles' },
+            { name: 'leaderboard', description: 'View the top legends (Global or Server)', options: [{ name: 'scope', description: 'Leaderboard scope', type: ApplicationCommandOptionType.String, required: false, choices: [{ name: 'Global', value: 'global' }, { name: 'Server', value: 'server' }] }] },
+            { name: 'shop', description: 'Browse the server\'s most expensive stuff' },
             { 
                 name: 'item', 
                 description: 'Manage the server shop (Admins only)',
@@ -1333,15 +1482,15 @@ client.once(Events.ClientReady, async () => {
             },
             { 
                 name: 'quiz', 
-                description: 'Test your knowledge for rewards (30s cooldown)',
+                description: 'Test your brain for rewards (30s cooldown)',
                 options: [
                     {
                         name: 'type',
-                        description: 'Category: Chess, Football, or Basketball',
+                        description: 'Category: Nerd Board Game, Football, or Basketball',
                         type: ApplicationCommandOptionType.String,
                         required: true,
                         choices: [
-                            { name: 'Chess', value: 'chess' },
+                            { name: 'Nerd Board Game', value: 'chess' },
                             { name: 'Football', value: 'football' },
                             { name: 'Basketball', value: 'basketball' }
                         ]
@@ -1350,24 +1499,24 @@ client.once(Events.ClientReady, async () => {
             },
             { 
                 name: 'guesstheplayer', 
-                description: 'Identify the mystery player (1m cooldown)',
+                description: 'Identify the mystery pro (1m cooldown)',
                 options: [
                     {
                         name: 'type',
-                        description: 'Category: Chess, Football, or Basketball',
+                        description: 'Category: Nerd Board Game, Football, or Basketball',
                         type: ApplicationCommandOptionType.String,
                         required: true,
                         choices: [
                             { name: 'Football', value: 'football' },
-                            { name: 'Chess', value: 'chess' },
+                            { name: 'Nerd Board Game', value: 'chess' },
                             { name: 'Basketball', value: 'basketball' }
                         ]
                     }
                 ]
             },
-            { name: 'guess', description: 'Submit your intel on the mystery player', options: [{ name: 'name', description: 'Name of the player', type: ApplicationCommandOptionType.String, required: true }] },
+            { name: 'guess', description: 'Submit your intel on the mystery person', options: [{ name: 'name', description: 'Name of the person', type: ApplicationCommandOptionType.String, required: true }] },
             { name: 'ration', description: 'View your tactical performance stats' },
-            { name: 'questions', description: 'Review the grandmaster question bank (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'page', description: 'Bank page', type: ApplicationCommandOptionType.Integer, required: false }] },
+            { name: 'questions', description: 'Review the nerd lord question bank (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'page', description: 'Bank page', type: ApplicationCommandOptionType.Integer, required: false }] },
             { name: 'addmoney', description: 'Deposit coins into a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Recipient', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to deposit', type: ApplicationCommandOptionType.Integer, required: true }] },
             { name: 'removemoney', description: 'Confiscate coins from a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Target', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to seize', type: ApplicationCommandOptionType.Integer, required: true }] },
             { name: 'help', description: 'The ultimate guide to dominating the server' }
@@ -1391,7 +1540,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
-                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/guesstheplayer <type>` - Start "Guess the Player" (1m cooldown)\n`/guess <name>` - Submit your player guess\n`/ration` - View your quiz accuracy and statistics' 
+                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/guesstheplayer <type>` - Start "Guess the Pro" (1m cooldown)\n`/guess <name>` - Submit your person guess\n`/ration` - View your accuracy and statistics' 
                 },
                 { 
                     name: '🛒 Server Shop', 
@@ -1399,11 +1548,11 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🛠️ Admin Commands', 
-                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View all quiz questions' 
+                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View the nerd lord question bank' 
                 }
             )
             .setColor(0x3498DB)
-            .setFooter({ text: "Tip: Use /help for the full guide!" })
+            .setFooter({ text: "Tip: Use /help for the full guide to greatness!" })
             .setTimestamp();
         
         await message.reply({ embeds: [embed] }).catch(() => {});
@@ -1491,7 +1640,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (timedOut) {
                     await incQuizStat(user.id, 'wrong');
                     const embed = new EmbedBuilder()
-                        .setAuthor({ name: "⏱️ Clock Flagged" })
+                        .setAuthor({ name: "⏱️ Brain Lag" })
                         .setTitle("Time is up!")
                         .setDescription(`You were too slow. The correct answer was: **${q.answer}**`)
                         .setColor(0xE67E22);
@@ -1503,8 +1652,8 @@ client.on(Events.InteractionCreate, async interaction => {
                     await incQuizStat(user.id, 'correct');
                     await addUserCoins(user.id, q.reward, guild.id);
                     const embed = new EmbedBuilder()
-                        .setAuthor({ name: "✅ Tactical Success" })
-                        .setTitle("Brilliant Move!")
+                        .setAuthor({ name: "✅ Big Brain Energy" })
+                        .setTitle("Galaxy Brain!")
                         .setDescription(`**${choice}** is correct!`)
                         .addFields({ name: '💰 Reward Earned', value: `\`${q.reward}\` coins`, inline: true })
                         .setColor(0x2ECC71);
@@ -1512,8 +1661,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 } else {
                     await incQuizStat(user.id, 'wrong');
                     const embed = new EmbedBuilder()
-                        .setAuthor({ name: "❌ Blunder" })
-                        .setTitle("Incorrect Solution")
+                        .setAuthor({ name: "❌ Mega Oopsie" })
+                        .setTitle("Terrible Attempt")
                         .setDescription(`That wasn't quite right. The correct answer was: **${q.answer}**`)
                         .setColor(0xE74C3C);
                     await interaction.editReply({ embeds: [embed], components: [] });
@@ -1605,9 +1754,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [embed], components: rows });
                 
                 const successEmbed = new EmbedBuilder()
-                    .setAuthor({ name: "🎉 Acquisition Successful" })
-                    .setTitle("Item Purchased")
-                    .setDescription(`You have successfully acquired the **${item.itemName}** role!`)
+                    .setAuthor({ name: "🎉 You Got It!" })
+                    .setTitle("New Loot!")
+                    .setDescription(`You just flexed on everyone by getting the **${item.itemName}** role!`)
                     .addFields(
                         { name: '💰 Price Paid', value: `\`${item.price}\` coins`, inline: true },
                         { name: '🎭 New Rank', value: `<@&${role.id}>`, inline: true }
@@ -1628,7 +1777,7 @@ client.on(Events.InteractionCreate, async interaction => {
             if (commandName === 'help') {
                 const embed = new EmbedBuilder()
                     .setTitle("Yo! So this is how to use the @Quiz Bot")
-                    .setDescription("Master the board and test your sports knowledge! Earn coins, climb the leaderboards, and unlock exclusive server roles.")
+                    .setDescription("Master the board games and test your sports knowledge! Earn coins, climb the leaderboards, and unlock exclusive server roles.")
                     .addFields(
                         { 
                             name: '1️⃣ What is it?', 
@@ -1636,11 +1785,11 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '2️⃣ How to use it / Get rich?', 
-                            value: "• `/daily`: Use this every day to get free coins. It's literally free money, don't forget it.\n• `/quiz <type>`: Get one of 150+ unique questions to answer in 60s. Solve correctly and get coins. Choose between **Chess**, **Football**, or **Basketball**! (30s cooldown)\n• `/guesstheplayer <type>`: The bot gives you hints about a famous player. First hint is free, others cost 5 coins. (1m cooldown)\n• `/guess <name>`: Use this to submit your answer for the \"Guess the Player\" game.\n• `/ration`: See how many quiz questions you've actually gotten right." 
+                            value: "• `/daily`: Use this every day to get free coins. It's literally free money, don't forget it.\n• `/quiz <type>`: Get one of 150+ unique questions to answer in 60s. Solve correctly and get coins. Choose between **Nerd Board Game**, **Football**, or **Basketball**! (30s cooldown)\n• `/guesstheplayer <type>`: The bot gives you hints about a famous person. First hint is free, others cost 5 coins. (1m cooldown)\n• `/guess <name>`: Use this to submit your answer for the \"Guess the Pro\" game.\n• `/ration`: See how many quiz questions you've actually gotten right." 
                         },
                         { 
                             name: '🛒 Spending Your Cash', 
-                            value: "But after having Money what are you gonna do with it?\n• `/shop`: Check out what you can buy. Usually, it's cool roles like \"Chess Master\" or \"Chess GOAT.\"\n• `/balance [user]`: Check how many coins you or another user actually have so you know if you're broke or not." 
+                            value: "But after having Money what are you gonna do with it?\n• `/shop`: Check out what you can buy. Usually, it's cool roles like \"Legendary NPC\" or \"Ultimate Lifeform.\"\n• `/balance [user]`: Check how many coins you or another user actually have so you know if you're broke or not." 
                         },
                         { 
                             name: '🏆 Competitive Aspects', 
@@ -1648,7 +1797,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🛠️ Admin Stuff (If you have permissions)', 
-                            value: "• `/addmoney <user> <amount>`: Give someone coins (or yourself, lol).\n• `/removemoney <user> <amount>`: Take coins away if someone is being annoying.\n• `/questions [page]`: See all the questions there are.\n• `/item create <name> <role> <price>`: Create an item for the shop (up to 10).\n• `/item edit <name>`: Edit a created item.\n• `/item delete <name>`: Delete a created item from the shop.\n• `/shop-delete-all`: Simply delete the entire shop." 
+                            value: "• `/addmoney <user> <amount>`: Give someone coins (or yourself, lol).\n• `/removemoney <user> <amount>`: Take coins away if someone is being annoying.\n• `/questions [page]`: See all the questions in the nerd lord question bank.\n• `/item create <name> <role> <price>`: Create an item for the shop (up to 10).\n• `/item edit <name>`: Edit a created item.\n• `/item delete <name>`: Delete a created item from the shop.\n• `/shop-delete-all`: Simply delete the entire shop." 
                         }
                     )
                     .setColor(0x3498DB)
@@ -1704,7 +1853,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 // Filter quiz pool by selected type
                 const filteredPool = QUIZ_POOL.filter(q => q.type === type);
                 if (filteredPool.length === 0) {
-                    return interaction.editReply(`❌ No questions available for category: **${type}**`);
+                    return interaction.editReply(`❌ No questions available for: **${type}**`);
                 }
 
                 const history = await getQuizHistory(user.id);
@@ -1767,16 +1916,16 @@ client.on(Events.InteractionCreate, async interaction => {
                         
                         const embed = new EmbedBuilder()
                             .setAuthor({ name: "🕵️ Intelligence Report" })
-                            .setTitle("Guess the Grandmaster")
+                            .setTitle("Identify the Nerd Lord")
                             .setDescription(`You have an active mission!\n\n${shown}`)
                             .setColor(0x8E44AD)
                             .addFields(
-                                { name: '💰 Cost', value: 'Next hint: `5 coins`', inline: true },
+                                { name: '💰 Cost', value: 'Next intel: `5 coins`', inline: true },
                                 { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
                             )
                             .setFooter({ text: "Use /guess to submit your answer" });
                         
-                        const label = idx >= entry.hints.length ? 'All Intel Gathered' : `Next Hint (5 Coins)`;
+                        const label = idx >= entry.hints.length ? 'All Intel Gathered' : `Next Intel (5 Coins)`;
                         const rowComp = new ActionRowBuilder().addComponents(
                             new ButtonBuilder()
                                 .setCustomId('guess_next')
@@ -1790,7 +1939,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 
                 const filteredPlayers = PLAYERS.filter(p => p.type === type);
                 if (filteredPlayers.length === 0) {
-                    return interaction.editReply(`❌ No players available for category: **${type}**`);
+                    return interaction.editReply(`❌ No people available for category: **${type}**`);
                 }
 
                 const p = filteredPlayers[Math.floor(Math.random() * filteredPlayers.length)];
@@ -1800,17 +1949,17 @@ client.on(Events.InteractionCreate, async interaction => {
                 const data = await getServerUserData(guild.id, user.id);
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: "🕵️ Intelligence Report" })
-                    .setTitle(`Guess the ${type.charAt(0).toUpperCase() + type.slice(1)} Player`)
-                    .setDescription(`**Hint 1:** ${p.hints[0]}`)
+                    .setTitle(`Identify the ${type === 'chess' ? 'Nerd Lord' : type.charAt(0).toUpperCase() + type.slice(1) + ' Pro'}`)
+                    .setDescription(`**Intel 1:** ${p.hints[0]}`)
                     .setColor(0x8E44AD)
                     .addFields(
-                        { name: '💰 Cost', value: 'Next hint: `5 coins`', inline: true },
+                        { name: '💰 Cost', value: 'Next intel: `5 coins`', inline: true },
                         { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
                     )
-                    .setFooter({ text: "Use /guess to answer • Hints cost 5 coins" });
+                    .setFooter({ text: "Use /guess to answer • Intel costs 5 coins" });
 
                 const rowBtn = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('guess_next').setLabel('Next Hint (5 Coins)').setStyle(ButtonStyle.Primary)
+                    new ButtonBuilder().setCustomId('guess_next').setLabel('Next Intel (5 Coins)').setStyle(ButtonStyle.Primary)
                 );
                 return interaction.editReply({ embeds: [embed], components: [rowBtn] });
             }
@@ -1822,7 +1971,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     const h = Math.floor(remaining / 3600000);
                     const m = Math.floor((remaining % 3600000) / 60000);
                     const embed = new EmbedBuilder()
-                        .setTitle("⏳ Patience, Grandmaster")
+                        .setTitle("⏳ Hold Your Horses")
                         .setDescription(`You've already claimed your daily reward. Come back in **${h}h ${m}m**.`)
                         .setColor(0x95A5A6);
                     return interaction.editReply({ embeds: [embed] });
@@ -1874,7 +2023,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: "📊 Competitive Standings" })
                     .setTitle(title)
-                    .setDescription(`The top 10 strategists currently dominating the boards.\n\n${txt}`)
+                    .setDescription(`The top 10 people currently dominating the boards.\n\n${txt}`)
                     .setThumbnail(scope === 'server' ? guild.iconURL({ dynamic: true }) : 'https://cdn-icons-png.flaticon.com/512/1021/1021204.png')
                     .setColor(0xFFD700)
                     .setFooter({ text: `Scope: ${scope.charAt(0).toUpperCase() + scope.slice(1)} • Updated just now` })
@@ -1886,8 +2035,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 const active = await getGuessActive(user.id);
                 if (!active) {
                     const embed = new EmbedBuilder()
-                        .setTitle("❌ No Active Intelligence Mission")
-                        .setDescription("You aren't currently tracking any players. Start a mission with `/guesstheplayer`!")
+                        .setTitle("❌ No Active Stalking Mission")
+                        .setDescription("You aren't currently tracking any mystery pros. Start a mission with `/guesstheplayer`!")
                         .setColor(0xE74C3C);
                     return interaction.editReply({ embeds: [embed] });
                 }
@@ -1900,13 +2049,13 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (correct) {
                     await addUserCoins(user.id, 10, guild.id);
                     const embed = new EmbedBuilder()
-                        .setAuthor({ name: "🎯 Mission Accomplished" })
+                        .setAuthor({ name: "🎯 Target Found" })
                         .setTitle("Target Identified!")
-                        .setDescription(`Brilliant deduction! The player was indeed **${active.playerName}**.`)
-                        .addFields({ name: '💰 Intelligence Bounty', value: '`10` coins', inline: true })
+                        .setDescription(`Insane brain power! The person was indeed **${active.playerName}**.`)
+                        .addFields({ name: '💰 Reward Bounty', value: '`10` coins', inline: true })
                         .setColor(0x2ECC71)
                         .setThumbnail('https://cdn-icons-png.flaticon.com/512/190/190411.png')
-                        .setFooter({ text: "Your tactical intuition is sharp." });
+                        .setFooter({ text: "Your brain is massive." });
                     return interaction.editReply({ embeds: [embed], components: [] });
                 }
                 
@@ -1950,12 +2099,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 const ratio = total > 0 ? ((stats.correct / total) * 100).toFixed(1) : 0;
 
                 const embed = new EmbedBuilder()
-                    .setAuthor({ name: "📊 Tactical Performance Record" })
+                    .setAuthor({ name: "📊 Brain Power Stats" })
                     .setTitle(`${user.username}'s Statistics`)
-                    .setDescription(`Detailed analysis of your chess training sessions.`)
+                    .setDescription(`Detailed analysis of your brain training sessions.`)
                     .addFields(
-                        { name: '✅ Correct Solutions', value: `\`${stats.correct}\``, inline: true },
-                        { name: '❌ Failed Puzzles', value: `\`${stats.wrong}\``, inline: true },
+                        { name: '✅ Smart Answers', value: `\`${stats.correct}\``, inline: true },
+                        { name: '❌ Dumb Mistakes', value: `\`${stats.wrong}\``, inline: true },
                         { name: '📈 Success Rate', value: `\`${ratio}%\``, inline: true }
                     )
                     .setColor(ratio >= 50 ? 0x2ECC71 : 0xE74C3C)
@@ -1968,7 +2117,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const shopItems = await dbAll('SELECT * FROM server_shop WHERE guildId = ? ORDER BY price ASC', [guild.id]);
                 if (shopItems.length === 0) {
                     const embed = new EmbedBuilder()
-                        .setAuthor({ name: "🛒 Grandmaster's Boutique" })
+                        .setAuthor({ name: "🛒 The General Store" })
                         .setTitle("Shop is Currently Closed")
                         .setDescription("The local merchants haven't set up shop here yet. Check back later!")
                         .setColor(0xE74C3C)
@@ -1984,13 +2133,13 @@ client.on(Events.InteractionCreate, async interaction => {
                     const roleMention = sRole ? `<@&${sRole.id}>` : `Unknown Role`;
                     const status = owned ? "✅ **Already Owned**" : "🛒 **Available**";
                     return {
-                        name: `♟️ ${s.itemName}`,
+                        name: `📦 ${s.itemName}`,
                         value: `💰 **Price:** \`${s.price}\` coins\n🎭 **Role:** ${roleMention}\n✨ **Status:** ${status}`,
                         inline: false
                     };
                 });
                 const embed = new EmbedBuilder()
-                    .setAuthor({ name: "🛒 Grandmaster's Boutique", iconURL: guild.iconURL({ dynamic: true }) })
+                    .setAuthor({ name: "🛒 The General Store", iconURL: guild.iconURL({ dynamic: true }) })
                     .setTitle("Server Exclusive Items")
                     .setDescription(`Welcome to the marketplace! You currently have \`${data.coins}\` coins to spend.`)
                     .addFields(fields)
@@ -2044,9 +2193,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     });
 
                     const embed = new EmbedBuilder()
-                        .setAuthor({ name: "🛠️ Merchant Tools" })
+                        .setAuthor({ name: "🛠️ Admin Tools" })
                         .setTitle("Item Created Successfully")
-                        .setDescription(`A new item has been added to the boutique.`)
+                        .setDescription(`A new item has been added to the store.`)
                         .addFields(
                             { name: '📦 Item Name', value: `\`${name}\``, inline: true },
                             { name: '💰 Price', value: `\`${price}\` coins`, inline: true },
