@@ -2113,7 +2113,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🎮 Tactical Games', 
-                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
+                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/review <url>`: Analyze your chess.com or lichess games.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
                         },
                         { 
                             name: '🏆 Shop & Leaderboard', 
