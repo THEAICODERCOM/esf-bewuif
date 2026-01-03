@@ -236,21 +236,47 @@ function classifyMove(prevEval, currentEval, color) {
 }
 
 async function fetchGameData(url) {
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
+    };
+
     if (url.includes('lichess.org')) {
         const gameId = url.split('/').pop();
-        const res = await axios.get(`https://lichess.org/api/game/export/${gameId}?evals=true&accuracy=true`, { headers: { 'Accept': 'application/json' } });
+        const res = await axios.get(`https://lichess.org/api/game/export/${gameId}?evals=true&accuracy=true`, { headers });
         return { type: 'lichess', data: res.data };
     } else if (url.includes('chess.com')) {
         const gameId = url.split('/').pop();
-        // Chess.com public API for a single game is a bit limited in terms of direct JSON with analysis
-        // But we can get the PGN
-        const res = await axios.get(`https://www.chess.com/game/live/${gameId}`);
-        // This is HTML, but we want the data. For simplicity, let's try their internal callback if it works
+        const isDaily = url.includes('/daily/');
+        const type = isDaily ? 'daily' : 'live';
+
+        // Chess.com callback API
         try {
-            const cbRes = await axios.get(`https://www.chess.com/callback/live/game/${gameId}`);
-            return { type: 'chesscom', data: cbRes.data };
+            const cbRes = await axios.get(`https://www.chess.com/callback/${type}/game/${gameId}`, { headers });
+            if (cbRes.data && cbRes.data.game) {
+                return { type: 'chesscom', data: cbRes.data };
+            }
         } catch (e) {
-            return null;
+            // Try generic view if live/daily specific fails
+            try {
+                const genRes = await axios.get(`https://www.chess.com/callback/game/view/${gameId}`, { headers });
+                if (genRes.data && genRes.data.game) {
+                    return { type: 'chesscom', data: genRes.data };
+                }
+            } catch (e2) {}
+        }
+        
+        // Fallback: try to get PGN directly
+        try {
+            const pgnRes = await axios.get(`https://www.chess.com/game/${type}/${gameId}/pgn`, { headers });
+            if (pgnRes.data) {
+                return { type: 'chesscom_pgn', data: pgnRes.data };
+            }
+        } catch (e) {
+            try {
+                const pgnResGen = await axios.get(`https://www.chess.com/game/view/${gameId}/pgn`, { headers });
+                if (pgnResGen.data) return { type: 'chesscom_pgn', data: pgnResGen.data };
+            } catch (e3) {}
         }
     }
     return null;
@@ -2411,22 +2437,28 @@ client.on(Events.InteractionCreate, async interaction => {
                     black = gameData.data.players.black.user?.name || "Black";
                     if (gameData.data.analysis) {
                         analysis = gameData.data.analysis;
-                        // Extract moves and evals from PGN or JSON
                     }
                     if (gameData.data.players.white.accuracy) {
                         accuracy = { white: gameData.data.players.white.accuracy, black: gameData.data.players.black.accuracy };
                     }
-                } else if (gameData.type === 'chesscom') {
-                    // Chess.com callback format
-                    pgn = gameData.data.game.pgn;
-                    const wPlayer = gameData.data.game.players.find(p => p.color === 'white');
-                    const bPlayer = gameData.data.game.players.find(p => p.color === 'black');
-                    white = wPlayer.username;
-                    black = bPlayer.username;
+                } else if (gameData.type === 'chesscom' || gameData.type === 'chesscom_pgn') {
+                    if (gameData.type === 'chesscom') {
+                        pgn = gameData.data.game.pgn;
+                        const wPlayer = gameData.data.game.players.find(p => p.color === 'white');
+                        const bPlayer = gameData.data.game.players.find(p => p.color === 'black');
+                        white = wPlayer?.username || "White";
+                        black = bPlayer?.username || "Black";
+                    } else {
+                        pgn = gameData.data;
+                    }
                 }
 
                 try {
                     chess.loadPgn(pgn);
+                    if (gameData.type === 'chesscom_pgn') {
+                        white = chess.header().White || "White";
+                        black = chess.header().Black || "Black";
+                    }
                 } catch (e) {
                     return interaction.editReply("❌ Error parsing PGN data from this game.");
                 }
