@@ -250,14 +250,21 @@ async function fetchGameData(url) {
         const isDaily = url.includes('/daily/');
         const type = isDaily ? 'daily' : 'live';
 
-        // Chess.com callback API
+        // 1. Try public PGN API (most reliable for simple extraction)
+        try {
+            const pgnRes = await axios.get(`https://www.chess.com/game/${type}/${gameId}/pgn`, { headers });
+            if (pgnRes.data && typeof pgnRes.data === 'string' && pgnRes.data.includes('[Event')) {
+                return { type: 'chesscom_pgn', data: pgnRes.data };
+            }
+        } catch (e) {}
+
+        // 2. Try callback API
         try {
             const cbRes = await axios.get(`https://www.chess.com/callback/${type}/game/${gameId}`, { headers });
             if (cbRes.data && cbRes.data.game) {
                 return { type: 'chesscom', data: cbRes.data };
             }
         } catch (e) {
-            // Try generic view if live/daily specific fails
             try {
                 const genRes = await axios.get(`https://www.chess.com/callback/game/view/${gameId}`, { headers });
                 if (genRes.data && genRes.data.game) {
@@ -266,18 +273,13 @@ async function fetchGameData(url) {
             } catch (e2) {}
         }
         
-        // Fallback: try to get PGN directly
+        // 3. Last ditch fallback for generic PGN
         try {
-            const pgnRes = await axios.get(`https://www.chess.com/game/${type}/${gameId}/pgn`, { headers });
-            if (pgnRes.data) {
-                return { type: 'chesscom_pgn', data: pgnRes.data };
+            const pgnResGen = await axios.get(`https://www.chess.com/game/view/${gameId}/pgn`, { headers });
+            if (pgnResGen.data && typeof pgnResGen.data === 'string') {
+                return { type: 'chesscom_pgn', data: pgnResGen.data };
             }
-        } catch (e) {
-            try {
-                const pgnResGen = await axios.get(`https://www.chess.com/game/view/${gameId}/pgn`, { headers });
-                if (pgnResGen.data) return { type: 'chesscom_pgn', data: pgnResGen.data };
-            } catch (e3) {}
-        }
+        } catch (e3) {}
     }
     return null;
 }
@@ -2421,7 +2423,11 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 const gameData = await fetchGameData(url);
                 if (!gameData) {
-                    return interaction.editReply("❌ Failed to retrieve game data. Ensure the game is public and the link is correct.");
+                    try {
+                        return await interaction.editReply("❌ Failed to retrieve game data. Ensure the game is public and the link is correct.");
+                    } catch (e) {
+                        return interaction.followUp({ content: "❌ Failed to retrieve game data. Ensure the game is public and the link is correct.", ephemeral: true }).catch(() => {});
+                    }
                 }
 
                 const chess = new Chess();
@@ -2455,7 +2461,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 if (!pgn) {
-                    return interaction.editReply("❌ Could not extract PGN data for this game.");
+                    try {
+                        return await interaction.editReply("❌ Could not extract PGN data for this game.");
+                    } catch (e) {
+                        return interaction.followUp({ content: "❌ Could not extract PGN data for this game.", ephemeral: true }).catch(() => {});
+                    }
                 }
 
                 try {
