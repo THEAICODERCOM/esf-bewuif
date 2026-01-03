@@ -2432,25 +2432,30 @@ client.on(Events.InteractionCreate, async interaction => {
                 let analysis = null;
 
                 if (gameData.type === 'lichess') {
-                    pgn = gameData.data.pgn;
-                    white = gameData.data.players.white.user?.name || "White";
-                    black = gameData.data.players.black.user?.name || "Black";
-                    if (gameData.data.analysis) {
+                    pgn = gameData.data?.pgn || "";
+                    white = gameData.data?.players?.white?.user?.name || "White";
+                    black = gameData.data?.players?.black?.user?.name || "Black";
+                    if (gameData.data?.analysis) {
                         analysis = gameData.data.analysis;
                     }
-                    if (gameData.data.players.white.accuracy) {
+                    if (gameData.data?.players?.white?.accuracy) {
                         accuracy = { white: gameData.data.players.white.accuracy, black: gameData.data.players.black.accuracy };
                     }
                 } else if (gameData.type === 'chesscom' || gameData.type === 'chesscom_pgn') {
                     if (gameData.type === 'chesscom') {
-                        pgn = gameData.data.game.pgn;
-                        const wPlayer = gameData.data.game.players.find(p => p.color === 'white');
-                        const bPlayer = gameData.data.game.players.find(p => p.color === 'black');
+                        pgn = gameData.data?.game?.pgn || "";
+                        const players = gameData.data?.game?.players || [];
+                        const wPlayer = players.find(p => p.color === 'white');
+                        const bPlayer = players.find(p => p.color === 'black');
                         white = wPlayer?.username || "White";
                         black = bPlayer?.username || "Black";
                     } else {
-                        pgn = gameData.data;
+                        pgn = gameData.data || "";
                     }
+                }
+
+                if (!pgn) {
+                    return interaction.editReply("❌ Could not extract PGN data for this game.");
                 }
 
                 try {
