@@ -1,6 +1,4 @@
 const { Client, GatewayIntentBits, ApplicationCommandOptionType, EmbedBuilder, PermissionFlagsBits, Events, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js'); 
-const { Chess } = require('chess.js');
-const axios = require('axios');
 
 // New Admin Permission Set: Manage Roles OR Manage Messages
 const ADMIN_PERMS = PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages;
@@ -218,71 +216,6 @@ const setGuessHintIndex = (userId, hintIndex) => dbRun('UPDATE guess_active SET 
 const clearGuessActive = userId => dbRun('DELETE FROM guess_active WHERE userId = ?', [userId]);
 const getGuessCooldown = userId => dbGet('SELECT lastUsed FROM guess_cooldown WHERE userId = ?', [userId]);
 const setGuessCooldown = userId => dbRun('INSERT INTO guess_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()]);
-
-const REVIEW_SESSIONS = new Map();
-
-const getBoardImage = (fen) => `https://fen2png.com/api/?fen=${encodeURIComponent(fen)}`;
-
-function classifyMove(prevEval, currentEval, color) {
-    const diff = color === 'w' ? (currentEval - prevEval) : (prevEval - currentEval);
-    // Values in centipawns
-    if (diff < -300) return { label: 'Blunder', emoji: '❓❓' };
-    if (diff < -100) return { label: 'Mistake', emoji: '❓' };
-    if (diff < -50) return { label: 'Inaccuracy', emoji: '⁉️' };
-    if (diff > 100) return { label: 'Great Move', emoji: '❗' };
-    if (diff > 300) return { label: 'Brilliant', emoji: '‼️' };
-    if (Math.abs(diff) < 20) return { label: 'Best Move', emoji: '⭐' };
-    return { label: 'Good Move', emoji: '✅' };
-}
-
-async function fetchGameData(url) {
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Accept': 'application/json'
-    };
-
-    if (url.includes('lichess.org')) {
-        const gameId = url.split('/').pop();
-        const res = await axios.get(`https://lichess.org/api/game/export/${gameId}?evals=true&accuracy=true`, { headers });
-        return { type: 'lichess', data: res.data };
-    } else if (url.includes('chess.com')) {
-        const gameId = url.split('/').pop();
-        const isDaily = url.includes('/daily/');
-        const type = isDaily ? 'daily' : 'live';
-
-        // 1. Try public PGN API (most reliable for simple extraction)
-        try {
-            const pgnRes = await axios.get(`https://www.chess.com/game/${type}/${gameId}/pgn`, { headers });
-            if (pgnRes.data && typeof pgnRes.data === 'string' && pgnRes.data.includes('[Event')) {
-                return { type: 'chesscom_pgn', data: pgnRes.data };
-            }
-        } catch (e) {}
-
-        // 2. Try callback API
-        try {
-            const cbRes = await axios.get(`https://www.chess.com/callback/${type}/game/${gameId}`, { headers });
-            if (cbRes.data && cbRes.data.game) {
-                return { type: 'chesscom', data: cbRes.data };
-            }
-        } catch (e) {
-            try {
-                const genRes = await axios.get(`https://www.chess.com/callback/game/view/${gameId}`, { headers });
-                if (genRes.data && genRes.data.game) {
-                    return { type: 'chesscom', data: genRes.data };
-                }
-            } catch (e2) {}
-        }
-        
-        // 3. Last ditch fallback for generic PGN
-        try {
-            const pgnResGen = await axios.get(`https://www.chess.com/game/view/${gameId}/pgn`, { headers });
-            if (pgnResGen.data && typeof pgnResGen.data === 'string') {
-                return { type: 'chesscom_pgn', data: pgnResGen.data };
-            }
-        } catch (e3) {}
-    }
-    return null;
-}
 
 // ---------------------------
 // Logic Helpers
@@ -1708,18 +1641,6 @@ client.once(Events.ClientReady, async () => {
             { name: 'questions', description: 'Review the chess and sports question bank (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'page', description: 'Bank page', type: ApplicationCommandOptionType.Integer, required: false }] },
             { name: 'addmoney', description: 'Deposit coins into a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Recipient', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to deposit', type: ApplicationCommandOptionType.Integer, required: true }] },
             { name: 'removemoney', description: 'Confiscate coins from a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Target', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to seize', type: ApplicationCommandOptionType.Integer, required: true }] },
-            { 
-                name: 'review', 
-                description: 'Analyze a chess.com or lichess.org game',
-                options: [
-                    {
-                        name: 'url',
-                        description: 'Link to the game (chess.com or lichess.org)',
-                        type: ApplicationCommandOptionType.String,
-                        required: true
-                    }
-                ]
-            },
             { name: 'help', description: 'The ultimate guide to dominating the server' }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
@@ -1741,7 +1662,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
-                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/challenge <user> <bet> <type>` - 1v1 battle for a pot of coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your person guess\n`/review <url>` - Analyze your chess.com or lichess games\n`/ration` - View your accuracy and statistics' 
+                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/challenge <user> <bet> <type>` - 1v1 battle for a pot of coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your person guess\n`/ration` - View your accuracy and statistics' 
                 },
                 { 
                     name: '🏆 Shop & Leaderboard', 
@@ -1819,69 +1740,6 @@ client.on(Events.InteractionCreate, async interaction => {
     try {
         if (interaction.isButton()) {
             const { customId } = interaction;
-            if (customId === 'review_prev' || customId === 'review_next') {
-                const session = REVIEW_SESSIONS.get(user.id);
-                if (!session) return interaction.followUp({ content: "❌ Review session expired. Start a new one with `/review`.", ephemeral: true });
-
-                if (customId === 'review_prev') session.currentIndex = Math.max(0, session.currentIndex - 1);
-                else session.currentIndex = Math.min(session.fens.length - 1, session.currentIndex + 1);
-
-                const fen = session.fens[session.currentIndex];
-                const moveInfo = session.currentIndex === 0 ? null : session.history[session.currentIndex - 1];
-                let desc = session.currentIndex === 0 ? "🏁 **Start of Game**" : `**Move ${Math.ceil(session.currentIndex / 2)}:** ${moveInfo.san}`;
-                
-                if (session.analysis && session.analysis[session.currentIndex - 1]) {
-                    const an = session.analysis[session.currentIndex - 1];
-                    if (an.eval !== undefined) {
-                        const evalScore = (an.eval / 100).toFixed(1);
-                        desc += `\n**Evaluation:** \`${evalScore > 0 ? '+' : ''}${evalScore}\``;
-                    }
-                    if (an.judgment) {
-                        desc += `\n**Rating:** ${an.judgment.name} ${an.judgment.comment || ''}`;
-                    }
-                }
-
-                const embed = new EmbedBuilder()
-                    .setTitle(`♟️ Game Review: ${session.white} vs ${session.black}`)
-                    .setDescription(desc)
-                    .setImage(getBoardImage(fen))
-                    .setColor(0x3498DB)
-                    .setFooter({ text: `Position ${session.currentIndex} / ${session.fens.length - 1}` });
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('review_prev').setLabel('⬅️ Previous').setStyle(ButtonStyle.Secondary).setDisabled(session.currentIndex === 0),
-                    new ButtonBuilder().setCustomId('review_next').setLabel('Next ➡️').setStyle(ButtonStyle.Primary).setDisabled(session.currentIndex >= session.fens.length - 1),
-                    new ButtonBuilder().setCustomId('review_end').setLabel('End Review').setStyle(ButtonStyle.Danger)
-                );
-
-                await interaction.editReply({ embeds: [embed], components: [row] });
-                return;
-            }
-
-            if (customId === 'review_end') {
-                const session = REVIEW_SESSIONS.get(user.id);
-                if (!session) return interaction.followUp({ content: "❌ Review session expired.", ephemeral: true });
-
-                REVIEW_SESSIONS.delete(user.id);
-
-                const accuracy = session.accuracy ? `White: **${session.accuracy.white}%** | Black: **${session.accuracy.black}%**` : "Analysis not fully available for this game.";
-                
-                const reportEmbed = new EmbedBuilder()
-                    .setTitle("📊 Tactical Intelligence Report")
-                    .setDescription(`Review completed for your game against **${user.username === session.white ? session.black : session.white}**.`)
-                    .addFields(
-                        { name: '🎯 Accuracy', value: accuracy },
-                        { name: '🧠 Observations', value: "• Your opening phase was solid.\n• Watch out for tactical blunders in the middlegame.\n• Improving endgame conversion will help you secure more wins." },
-                        { name: '🚀 How to Improve', value: "1. Practice 15 minutes of puzzles daily.\n2. Review your lost games to identify patterns.\n3. Study the 'London System' or 'King's Gambit' for better openings." }
-                    )
-                    .setColor(0x2ECC71)
-                    .setTimestamp();
-
-                await interaction.editReply({ content: "✅ Review session closed. Check your DMs for the full report!", embeds: [], components: [] });
-                await user.send({ embeds: [reportEmbed] }).catch(() => {});
-                return;
-            }
-
             if (customId === 'shop_close') {
                 await interaction.editReply({ components: [] });
                 return;
@@ -2141,7 +1999,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🎮 Tactical Games', 
-                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/review <url>`: Analyze your chess.com or lichess games.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
+                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
                         },
                         { 
                             name: '🏆 Shop & Leaderboard', 
@@ -2411,109 +2269,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 await interaction.editReply({ content: `<@${target.id}>`, embeds: [embed], components: [row] });
                 return;
-            }
-
-            if (commandName === 'review') {
-                const url = options.getString('url');
-                if (!url.includes('chess.com') && !url.includes('lichess.org')) {
-                    return interaction.editReply("❌ Please provide a valid Chess.com or Lichess.org game link.");
-                }
-
-                await interaction.editReply("🔍 **Scanning tactical data...** Analyzing your performance.");
-
-                const gameData = await fetchGameData(url);
-                if (!gameData) {
-                    try {
-                        return await interaction.editReply("❌ Failed to retrieve game data. Ensure the game is public and the link is correct.");
-                    } catch (e) {
-                        return interaction.followUp({ content: "❌ Failed to retrieve game data. Ensure the game is public and the link is correct.", ephemeral: true }).catch(() => {});
-                    }
-                }
-
-                const chess = new Chess();
-                let pgn = "";
-                let white = "White";
-                let black = "Black";
-                let accuracy = null;
-                let analysis = null;
-
-                if (gameData.type === 'lichess') {
-                    pgn = gameData.data?.pgn || "";
-                    white = gameData.data?.players?.white?.user?.name || "White";
-                    black = gameData.data?.players?.black?.user?.name || "Black";
-                    if (gameData.data?.analysis) {
-                        analysis = gameData.data.analysis;
-                    }
-                    if (gameData.data?.players?.white?.accuracy) {
-                        accuracy = { white: gameData.data.players.white.accuracy, black: gameData.data.players.black.accuracy };
-                    }
-                } else if (gameData.type === 'chesscom' || gameData.type === 'chesscom_pgn') {
-                    if (gameData.type === 'chesscom') {
-                        pgn = gameData.data?.game?.pgn || "";
-                        const players = gameData.data?.game?.players || [];
-                        const wPlayer = players.find(p => p.color === 'white');
-                        const bPlayer = players.find(p => p.color === 'black');
-                        white = wPlayer?.username || "White";
-                        black = bPlayer?.username || "Black";
-                    } else {
-                        pgn = gameData.data || "";
-                    }
-                }
-
-                if (!pgn) {
-                    try {
-                        return await interaction.editReply("❌ Could not extract PGN data for this game.");
-                    } catch (e) {
-                        return interaction.followUp({ content: "❌ Could not extract PGN data for this game.", ephemeral: true }).catch(() => {});
-                    }
-                }
-
-                try {
-                    chess.loadPgn(pgn);
-                    if (gameData.type === 'chesscom_pgn') {
-                        white = chess.header().White || "White";
-                        black = chess.header().Black || "Black";
-                    }
-                } catch (e) {
-                    return interaction.editReply("❌ Error parsing PGN data from this game.");
-                }
-
-                const history = chess.history({ verbose: true });
-                const fens = [new Chess().fen()]; // Initial
-                const tempChess = new Chess();
-                for (const move of history) {
-                    tempChess.move(move);
-                    fens.push(tempChess.fen());
-                }
-
-                const session = {
-                    userId: user.id,
-                    fens,
-                    history,
-                    currentIndex: 0,
-                    white,
-                    black,
-                    accuracy,
-                    analysis,
-                    startTime: Date.now()
-                };
-
-                REVIEW_SESSIONS.set(user.id, session);
-
-                const embed = new EmbedBuilder()
-                    .setTitle(`♟️ Game Review: ${white} vs ${black}`)
-                    .setDescription(`Analyze your game move-by-move. Click the buttons to navigate.\n\n**Current Move:** Start of game`)
-                    .setImage(getBoardImage(fens[0]))
-                    .setColor(0x3498DB)
-                    .setFooter({ text: "Pro Tip: Analyze your blunders to stop repeating them!" });
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('review_prev').setLabel('⬅️ Previous').setStyle(ButtonStyle.Secondary).setDisabled(true),
-                    new ButtonBuilder().setCustomId('review_next').setLabel('Next ➡️').setStyle(ButtonStyle.Primary).setDisabled(fens.length <= 1),
-                    new ButtonBuilder().setCustomId('review_end').setLabel('End Review').setStyle(ButtonStyle.Danger)
-                );
-
-                return interaction.editReply({ embeds: [embed], components: [row] });
             }
 
             if (commandName === 'balance') {
