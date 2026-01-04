@@ -2200,10 +2200,12 @@ client.on(Events.InteractionCreate, async interaction => {
             return;
         }
 
-        if (interaction.isChatInputCommand()) {
-            const { commandName, options } = interaction;
+        try {
+            if (interaction.isChatInputCommand()) {
+                await interaction.deferReply();
+                const { commandName, options } = interaction;
 
-            if (commandName === 'help') {
+                if (commandName === 'help') {
                 const embed = new EmbedBuilder()
                     .setTitle("🤖 Ultimate Guide to @Quiz Bot")
                     .setDescription("Master standard chess terminology, dominate sports trivia, and climb the global leaderboards!")
@@ -2290,6 +2292,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 return interaction.editReply({ embeds: [embed], components: [row] });
             }
                 if (commandName === 'quiz') {
+                const type = options.getString('type') || 'chess'; // Default to chess if not provided
                 const active = await getActiveQuestion(user.id);
                 const timeLimitMs = 60 * 1000;
                 if (active) {
@@ -3070,11 +3073,16 @@ client.on(Events.InteractionCreate, async interaction => {
 
     } catch (err) {
         console.error("Interaction Error:", err);
+        const errorEmbed = new EmbedBuilder()
+            .setTitle("❌ Command Error")
+            .setDescription("An unexpected error occurred while processing your request.")
+            .setColor(0xE74C3C);
+        
         try {
             if (interaction.deferred || interaction.replied) {
-                await interaction.editReply("⚠️ Error occurred while processing that command.").catch(() => {});
+                await interaction.editReply({ embeds: [errorEmbed], components: [] }).catch(() => {});
             } else {
-                await interaction.reply({ content: "⚠️ Error occurred while processing that command.", ephemeral: true }).catch(() => {});
+                await interaction.reply({ embeds: [errorEmbed], ephemeral: true }).catch(() => {});
             }
         } catch (e) {}
     }
