@@ -26,39 +26,57 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 
 /**
  * Robust Database Path Resolution & Data Recovery
- * Searches multiple locations for data.sqlite to prevent data loss.
+ * Searches multiple locations for data.sqlite and picks the one that likely has data.
  */
 function resolveDatabasePath() {
     const locations = [
         path.join(__dirname, 'data.sqlite'),           // Current script directory
         path.join(process.cwd(), 'data.sqlite'),      // Execution directory
         path.join(__dirname, '..', 'data.sqlite'),    // Parent directory
-        path.join(process.env.HOME || '', 'Desktop', 'Chess-Bot', 'data.sqlite'), // Common desktop location
-        path.join(process.env.HOME || '', 'Downloads', 'Chess-Bot copy', 'data.sqlite') // Common downloads location
+        path.join(process.env.HOME || '', 'Desktop', 'Chess-Bot', 'data.sqlite'),
+        path.join(process.env.HOME || '', 'Downloads', 'Chess-Bot copy', 'data.sqlite'),
+        path.join(process.env.HOME || '', 'data.sqlite'), // Home directory
+        '/home/thegoatchessbot/data.sqlite' // Explicitly check the path from user logs
     ];
+
+    let bestFile = null;
+    let maxSize = -1;
 
     for (const loc of locations) {
         if (fs.existsSync(loc)) {
-            console.log(`📂 Database found at: ${loc}`);
-            
-            // If it's not in the primary location, try to "restore" it by copying it to the primary location
-            const primaryLoc = path.join(__dirname, 'data.sqlite');
-            if (loc !== primaryLoc && !fs.existsSync(primaryLoc)) {
-                try {
-                    console.log(`🔄 Restoring data from ${loc} to ${primaryLoc}...`);
-                    fs.copyFileSync(loc, primaryLoc);
-                    console.log("✅ Data successfully restored to project folder.");
-                    return primaryLoc;
-                } catch (e) {
-                    console.error(`❌ Failed to restore data: ${e.message}`);
+            try {
+                const stats = fs.statSync(loc);
+                console.log(`🔍 Found database at ${loc} (Size: ${stats.size} bytes)`);
+                if (stats.size > maxSize) {
+                    maxSize = stats.size;
+                    bestFile = loc;
                 }
-            }
-            return loc;
+            } catch (e) {}
         }
     }
 
-    console.log("⚠️ No existing database found. Creating a new one at project root.");
-    return path.join(__dirname, 'data.sqlite');
+    const primaryLoc = path.join(__dirname, 'data.sqlite');
+
+    if (bestFile) {
+        if (bestFile !== primaryLoc) {
+            try {
+                console.log(`🔄 Best data source found at ${bestFile}. Restoring to ${primaryLoc}...`);
+                // Only copy if the primary doesn't exist or is smaller
+                if (!fs.existsSync(primaryLoc) || fs.statSync(primaryLoc).size < maxSize) {
+                    fs.copyFileSync(bestFile, primaryLoc);
+                    console.log("✅ Data successfully restored from larger backup.");
+                } else {
+                    console.log("ℹ️ Primary database is already the largest available.");
+                }
+            } catch (e) {
+                console.error(`❌ Restoration failed: ${e.message}`);
+            }
+        }
+        return primaryLoc;
+    }
+
+    console.log("⚠️ No existing database found. Creating new at project root.");
+    return primaryLoc;
 }
 
 const dbPath = resolveDatabasePath();
@@ -1856,12 +1874,24 @@ client.on(Events.InteractionCreate, async interaction => {
     // 2. Pre-defer Chat Commands to prevent "InteractionNotReplied" errors
     if (interaction.isChatInputCommand()) {
         try {
+            // Check if interaction is already too old (Discord's 3s limit)
+            const age = Date.now() - interaction.createdTimestamp;
+            if (age > 2500) {
+                console.warn(`⚠️ Interaction for "/${interaction.commandName}" is already ${age}ms old. Deferral might fail.`);
+            }
+
             // Check if it's already been deferred or replied to
             if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply();
+                await interaction.deferReply().catch(err => {
+                    if (err.code === 10062) {
+                        console.error(`❌ Interaction for "/${interaction.commandName}" expired (took ${Date.now() - interaction.createdTimestamp}ms).`);
+                    } else {
+                        throw err;
+                    }
+                });
             }
         } catch (e) {
-            console.error("Critical Deferral Failure:", e.message);
+            console.error(`❌ Deferral failed for "/${interaction.commandName}":`, e.message);
             return;
         }
     }
