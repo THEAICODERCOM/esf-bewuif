@@ -60,13 +60,36 @@ function resolveDatabasePath() {
     if (bestFile) {
         if (bestFile !== primaryLoc) {
             try {
-                console.log(`🔄 Best data source found at ${bestFile}. Restoring to ${primaryLoc}...`);
-                // Only copy if the primary doesn't exist or is smaller
-                if (!fs.existsSync(primaryLoc) || fs.statSync(primaryLoc).size < maxSize) {
+                // If primary doesn't exist or is smaller, copy from best backup
+                const primaryExists = fs.existsSync(primaryLoc);
+                const primarySize = primaryExists ? fs.statSync(primaryLoc).size : 0;
+
+                if (!primaryExists || primarySize < maxSize) {
+                    console.log(`🔄 Best data source found at ${bestFile}. Restoring to ${primaryLoc}...`);
                     fs.copyFileSync(bestFile, primaryLoc);
                     console.log("✅ Data successfully restored from larger backup.");
                 } else {
                     console.log("ℹ️ Primary database is already the largest available.");
+                    // SYNC BACKUP: If primary is larger/newer, update the backup at /home/thegoatchessbot/data.sqlite
+                    // This ensures that even if the project folder is wiped, the latest data is safe in the home dir.
+                    const backupLoc = '/home/thegoatchessbot/data.sqlite';
+                    try {
+                        if (fs.existsSync(backupLoc)) {
+                            const backupSize = fs.statSync(backupLoc).size;
+                            if (primarySize > backupSize) {
+                                console.log(`📤 Updating safety backup at ${backupLoc} with latest data...`);
+                                fs.copyFileSync(primaryLoc, backupLoc);
+                                console.log("✅ Safety backup updated.");
+                            }
+                        } else {
+                            // Create it if it doesn't exist
+                            console.log(`📤 Creating initial safety backup at ${backupLoc}...`);
+                            fs.copyFileSync(primaryLoc, backupLoc);
+                            console.log("✅ Safety backup created.");
+                        }
+                    } catch (e) {
+                        console.error(`⚠️ Failed to update safety backup: ${e.message}`);
+                    }
                 }
             } catch (e) {
                 console.error(`❌ Restoration failed: ${e.message}`);
@@ -1851,61 +1874,57 @@ async function getRandomQuizForUser(userId, type) {
 // Interaction Handler
 // ---------------------------
 client.on(Events.InteractionCreate, async interaction => {
-    const { user, guild } = interaction;
-
-    // 1. Check interaction type and return if not supported
+    // 1. Handle Autocomplete immediately (no deferral needed/allowed)
     if (interaction.isAutocomplete()) {
         try {
-            const focusedValue = interaction.options.getFocused();
-            const shopItems = await dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [guild.id]);
+            const focusedValue = interaction.options.getFocused() || '';
+            const guildId = interaction.guildId;
+            if (!guildId) return;
+
+            const shopItems = await dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [guildId]);
             const filtered = shopItems
                 .filter(item => item.itemName.toLowerCase().includes(focusedValue.toLowerCase()))
                 .map(item => ({ name: item.itemName, value: item.itemName }));
             
             await interaction.respond(filtered.slice(0, 25)).catch(() => {});
         } catch (e) {
-            console.error("Autocomplete Error:", e);
+            console.error("Autocomplete Error:", e.message);
         }
         return;
     }
 
+    // 2. Handle Commands and Buttons
     if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
-    // 2. Pre-defer Chat Commands to prevent "InteractionNotReplied" errors
-    if (interaction.isChatInputCommand()) {
-        try {
-            // Check if interaction is already too old (Discord's 3s limit)
-            const age = Date.now() - interaction.createdTimestamp;
-            if (age > 2500) {
-                console.warn(`⚠️ Interaction for "/${interaction.commandName}" is already ${age}ms old. Deferral might fail.`);
-            }
+    const { user, guild } = interaction;
 
-            // Check if it's already been deferred or replied to
-            if (!interaction.deferred && !interaction.replied) {
-                let deferFailed = false;
-                await interaction.deferReply().catch(err => {
-                    deferFailed = true;
-                    if (err.code === 10062) {
-                        console.error(`❌ Interaction for "/${interaction.commandName}" expired (took ${Date.now() - interaction.createdTimestamp}ms).`);
-                    } else {
-                        console.error(`❌ Deferral failed for "/${interaction.commandName}":`, err.message);
-                    }
-                });
-                
-                if (deferFailed) return; // Stop execution if deferral failed
-            }
-        } catch (e) {
-            console.error(`❌ Deferral failed for "/${interaction.commandName}":`, e.message);
-            return;
+    // 3. IMMEDIATE DEFERRAL
+    // This is the most critical part. We must tell Discord we received the interaction 
+    // before doing ANY database work or logic.
+    try {
+        if (interaction.isChatInputCommand()) {
+            await interaction.deferReply().catch(err => {
+                throw new Error(`Deferral Failed: ${err.message} (Code: ${err.code})`);
+            });
+        } else if (interaction.isButton()) {
+            await interaction.deferUpdate().catch(err => {
+                throw new Error(`Button DeferUpdate Failed: ${err.message} (Code: ${err.code})`);
+            });
         }
+    } catch (e) {
+        // If deferral fails, we cannot respond to this interaction.
+        // This usually happens if the bot is running twice or network is extremely laggy.
+        console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] ${e.message}`);
+        return; 
     }
+
+    // 4. Background tasks (after deferral)
     if (guild) {
         upsertGuildUser(guild.id, user.id).catch(() => {});
     }
 
     try {
         if (interaction.isButton()) {
-            await interaction.deferUpdate().catch(() => {});
             const { customId } = interaction;
             
             if (customId === 'review_prev' || customId === 'review_next') {
@@ -2267,6 +2286,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 );
                 rows.push(navRow);
 
+                // Use editReply because the interaction was already deferred by the global handler
                 return interaction.editReply({ embeds: [embed], components: rows });
             }
 
@@ -2275,6 +2295,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const item = (await dbAll('SELECT * FROM server_shop WHERE guildId = ? AND itemName = ?', [guild.id, itemName]))[0];
                 if (!item) { 
                     try {
+                        // Use followUp with ephemeral for error messages on button clicks
                         await interaction.followUp({ content: "Item no longer exists in the shop.", ephemeral: true }); 
                     } catch (e) {
                         console.error("FollowUp failed:", e.message);
@@ -2367,6 +2388,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 navRow.addComponents(new ButtonBuilder().setCustomId('shop_close').setLabel('Close Shop').setEmoji('🧹').setStyle(ButtonStyle.Danger));
                 rows.push(navRow);
                 
+                // Use editReply for the main shop interface update
                 await interaction.editReply({ embeds: [embed], components: rows });
                 
                 const successEmbed = new EmbedBuilder()
@@ -2381,6 +2403,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/3144/3144456.png')
                     .setTimestamp();
 
+                // followUp is correct here for the success message
                 await interaction.followUp({ embeds: [successEmbed], ephemeral: true });
                 return;
             }
