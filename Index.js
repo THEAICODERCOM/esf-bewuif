@@ -1797,33 +1797,23 @@ async function getRandomQuizForUser(userId, type) {
 client.on(Events.InteractionCreate, async interaction => {
     const { user, guild } = interaction;
 
-    // 1. Immediate Deferral to prevent "Application didn't respond"
-    try {
-        if (interaction.isAutocomplete()) {
+    // 1. Check interaction type and return if not supported
+    if (interaction.isAutocomplete()) {
+        try {
             const focusedValue = interaction.options.getFocused();
             const shopItems = await dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [guild.id]);
             const filtered = shopItems
                 .filter(item => item.itemName.toLowerCase().includes(focusedValue.toLowerCase()))
                 .map(item => ({ name: item.itemName, value: item.itemName }));
             
-            // Limit to 25 choices (Discord limit)
             await interaction.respond(filtered.slice(0, 25)).catch(() => {});
-            return;
+        } catch (e) {
+            console.error("Autocomplete Error:", e);
         }
-
-        if (interaction.isButton()) {
-            const [type, action, key, level, targetId] = interaction.customId.split('_');
-
-            await interaction.deferUpdate().catch(() => {});
-        } else if (interaction.isChatInputCommand()) {
-            await interaction.deferReply().catch(() => {});
-        } else {
-            return;
-        }
-    } catch (e) {
-        console.error("Deferral Error:", e);
         return;
     }
+
+    if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
     // 2. Background Tasks (Non-blocking)
     if (guild) {
@@ -1832,7 +1822,9 @@ client.on(Events.InteractionCreate, async interaction => {
 
     try {
         if (interaction.isButton()) {
+            await interaction.deferUpdate().catch(() => {});
             const { customId } = interaction;
+            
             if (customId === 'review_prev' || customId === 'review_next') {
                 const session = REVIEW_SESSIONS.get(user.id);
                 if (!session) return interaction.followUp({ content: "❌ Review session expired. Start a new one with `/review`.", ephemeral: true });
@@ -2201,7 +2193,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         if (interaction.isChatInputCommand()) {
-            await interaction.deferReply();
+            await interaction.deferReply().catch(() => {});
             const { commandName, options } = interaction;
 
                 if (commandName === 'help') {
