@@ -2200,10 +2200,9 @@ client.on(Events.InteractionCreate, async interaction => {
             return;
         }
 
-        try {
-            if (interaction.isChatInputCommand()) {
-                await interaction.deferReply();
-                const { commandName, options } = interaction;
+        if (interaction.isChatInputCommand()) {
+            await interaction.deferReply();
+            const { commandName, options } = interaction;
 
                 if (commandName === 'help') {
                 const embed = new EmbedBuilder()
