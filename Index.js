@@ -1882,13 +1882,17 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // Check if it's already been deferred or replied to
             if (!interaction.deferred && !interaction.replied) {
+                let deferFailed = false;
                 await interaction.deferReply().catch(err => {
+                    deferFailed = true;
                     if (err.code === 10062) {
                         console.error(`❌ Interaction for "/${interaction.commandName}" expired (took ${Date.now() - interaction.createdTimestamp}ms).`);
                     } else {
-                        throw err;
+                        console.error(`❌ Deferral failed for "/${interaction.commandName}":`, err.message);
                     }
                 });
+                
+                if (deferFailed) return; // Stop execution if deferral failed
             }
         } catch (e) {
             console.error(`❌ Deferral failed for "/${interaction.commandName}":`, e.message);
@@ -2304,7 +2308,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'shop-delete-all') {
                 if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can clear the shop.", ephemeral: true });
+                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can clear the shop." });
                 }
                 await new Promise((res, rej) => {
                     db.run('DELETE FROM server_shop WHERE guildId = ?', [guild.id], e => e ? rej(e) : res());
@@ -2849,7 +2853,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setDescription("The local merchants haven't set up shop here yet. Check back later!")
                         .setColor(0xE74C3C)
                         .setThumbnail('https://cdn-icons-png.flaticon.com/512/1041/1041916.png');
-                    return interaction.editReply({ embeds: [embed], ephemeral: true });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 const member = await guild.members.fetch(user.id);
@@ -2899,7 +2903,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const sub = options.getSubcommand();
                 if (sub === 'create') {
                     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                        return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can create shop items.", ephemeral: true });
+                        return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can create shop items." });
                     }
                     const name = options.getString('name');
                     const role = options.getRole('role');
@@ -2912,7 +2916,7 @@ client.on(Events.InteractionCreate, async interaction => {
                             .setTitle("🚫 Inventory Full")
                             .setDescription("Your shop has reached the maximum capacity of **10 items**. Delete an item to make room for more.")
                             .setColor(0xE74C3C);
-                        return interaction.editReply({ embeds: [embed], ephemeral: true });
+                        return interaction.editReply({ embeds: [embed] });
                     }
 
                     await new Promise((res, rej) => {
@@ -2935,7 +2939,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (sub === 'edit') {
                     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                        return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can edit shop items.", ephemeral: true });
+                        return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can edit shop items." });
                     }
                     const name = options.getString('name');
                     const newName = options.getString('new_name');
@@ -2948,7 +2952,7 @@ client.on(Events.InteractionCreate, async interaction => {
                             .setTitle("❌ Item Not Found")
                             .setDescription(`The item **${name}** does not exist in your shop.`)
                             .setColor(0xE74C3C);
-                        return interaction.editReply({ embeds: [embed], ephemeral: true });
+                        return interaction.editReply({ embeds: [embed] });
                     }
 
                     if (newName) {
@@ -2982,7 +2986,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (sub === 'delete') {
                     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                        return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can delete shop items.", ephemeral: true });
+                        return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can delete shop items." });
                     }
                     const name = options.getString('name');
                     if (name.toLowerCase() === 'all') {
@@ -3007,7 +3011,7 @@ client.on(Events.InteractionCreate, async interaction => {
                                 .setTitle("❌ Item Not Found")
                                 .setDescription(`The item **${name}** does not exist in your shop.`)
                                 .setColor(0xE74C3C);
-                            return interaction.editReply({ embeds: [embed], ephemeral: true });
+                            return interaction.editReply({ embeds: [embed] });
                         }
                         const embed = new EmbedBuilder()
                             .setAuthor({ name: "🛠️ Merchant Tools" })
@@ -3021,7 +3025,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'admin-backup') {
                 if (user.id !== '1324354578338025533') {
-                    return interaction.editReply({ content: "❌ This is a restricted owner command.", ephemeral: true });
+                    return interaction.editReply({ content: "❌ This is a restricted owner command." });
                 }
 
                 const serverCoins = await dbAll('SELECT * FROM server_coins WHERE guildId = ?', [guild.id]);
@@ -3066,7 +3070,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'admin-repair') {
                 if (user.id !== '1324354578338025533') {
-                    return interaction.editReply({ content: "❌ This is a restricted owner command.", ephemeral: true });
+                    return interaction.editReply({ content: "❌ This is a restricted owner command." });
                 }
 
                 await interaction.editReply("🔍 Starting deep database integrity check...");
@@ -3103,7 +3107,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'addmoney') {
                 if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury.", ephemeral: true });
+                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
                 }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
@@ -3122,7 +3126,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (commandName === 'removemoney') {
                 if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury.", ephemeral: true });
+                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
                 }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
