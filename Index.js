@@ -20,10 +20,48 @@ try {
 }
 
 // ---------------------------
-// Client & Database
+// Client & Database Setup
 // ---------------------------
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
-const dbPath = path.join(__dirname, '..', 'data.sqlite');
+
+/**
+ * Robust Database Path Resolution & Data Recovery
+ * Searches multiple locations for data.sqlite to prevent data loss.
+ */
+function resolveDatabasePath() {
+    const locations = [
+        path.join(__dirname, 'data.sqlite'),           // Current script directory
+        path.join(process.cwd(), 'data.sqlite'),      // Execution directory
+        path.join(__dirname, '..', 'data.sqlite'),    // Parent directory
+        path.join(process.env.HOME || '', 'Desktop', 'Chess-Bot', 'data.sqlite'), // Common desktop location
+        path.join(process.env.HOME || '', 'Downloads', 'Chess-Bot copy', 'data.sqlite') // Common downloads location
+    ];
+
+    for (const loc of locations) {
+        if (fs.existsSync(loc)) {
+            console.log(`📂 Database found at: ${loc}`);
+            
+            // If it's not in the primary location, try to "restore" it by copying it to the primary location
+            const primaryLoc = path.join(__dirname, 'data.sqlite');
+            if (loc !== primaryLoc && !fs.existsSync(primaryLoc)) {
+                try {
+                    console.log(`🔄 Restoring data from ${loc} to ${primaryLoc}...`);
+                    fs.copyFileSync(loc, primaryLoc);
+                    console.log("✅ Data successfully restored to project folder.");
+                    return primaryLoc;
+                } catch (e) {
+                    console.error(`❌ Failed to restore data: ${e.message}`);
+                }
+            }
+            return loc;
+        }
+    }
+
+    console.log("⚠️ No existing database found. Creating a new one at project root.");
+    return path.join(__dirname, 'data.sqlite');
+}
+
+const dbPath = resolveDatabasePath();
 
 // Function to handle database corruption
 function handleDatabaseCorruption() {
@@ -1815,7 +1853,18 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
-    // 2. Background Tasks (Non-blocking)
+    // 2. Pre-defer Chat Commands to prevent "InteractionNotReplied" errors
+    if (interaction.isChatInputCommand()) {
+        try {
+            // Check if it's already been deferred or replied to
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply();
+            }
+        } catch (e) {
+            console.error("Critical Deferral Failure:", e.message);
+            return;
+        }
+    }
     if (guild) {
         upsertGuildUser(guild.id, user.id).catch(() => {});
     }
@@ -1894,7 +1943,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             if (customId.startsWith('rush_choice:')) {
-                const choice = customId.split(':')[1];
+                const choice = customId.slice('rush_choice:'.length);
                 const session = RUSH_SESSIONS.get(user.id);
 
                 if (!session) {
@@ -2016,7 +2065,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     return interaction.followUp({ content: "❌ You are not part of this battle!", ephemeral: true });
                 }
 
-                const choice = customId.split(':')[1];
+                const choice = customId.slice('battle_choice:'.length);
                 const q = QUIZ_POOL.find(i => i.id === challenge.quizId);
                 const correct = choice === q.answer;
 
@@ -2041,7 +2090,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
             if (customId.startsWith('quiz_choice:')) {
-                const choice = customId.split(':')[1];
+                const choice = customId.slice('quiz_choice:'.length);
                 const active = await getActiveQuestion(user.id);
                 if (!active) {
                     await interaction.followUp({ content: "❌ This quiz has expired or you don't have an active one.", ephemeral: true });
@@ -2192,9 +2241,8 @@ client.on(Events.InteractionCreate, async interaction => {
             return;
         }
 
-        if (interaction.isChatInputCommand()) {
-            await interaction.deferReply().catch(() => {});
-            const { commandName, options } = interaction;
+    if (interaction.isChatInputCommand()) {
+        const { commandName, options } = interaction;
 
                 if (commandName === 'help') {
                 const embed = new EmbedBuilder()
@@ -2320,7 +2368,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const remaining = filteredPool.filter(q => !history.includes(q.id));
                 let q;
                 if (remaining.length === 0) {
-                    await new Promise(res => db.run('DELETE FROM quiz_history WHERE userId = ?', [user.id], res));
+                    await dbRun('DELETE FROM quiz_history WHERE userId = ?', [user.id]);
                     q = filteredPool[Math.floor(Math.random() * filteredPool.length)];
                 } else {
                     q = remaining[Math.floor(Math.random() * remaining.length)];
