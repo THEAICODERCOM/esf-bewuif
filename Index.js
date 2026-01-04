@@ -2213,27 +2213,125 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [embed], components: [row] });
                 return;
             }
+            if (customId.startsWith('shop_page:')) {
+                const page = parseInt(customId.split(':')[1]);
+                const shopItems = await dbAll('SELECT * FROM server_shop WHERE guildId = ? ORDER BY price ASC', [guild.id]);
+                const itemsPerPage = 5;
+                const totalPages = Math.ceil(shopItems.length / itemsPerPage);
+                const start = (page - 1) * itemsPerPage;
+                const pagedItems = shopItems.slice(start, start + itemsPerPage);
+
+                const member = await guild.members.fetch(user.id);
+                const data = await getServerUserData(guild.id, user.id);
+                const fields = pagedItems.map(s => {
+                    const sRole = guild.roles.cache.get(s.roleId);
+                    const owned = sRole ? member.roles.cache.has(sRole.id) : false;
+                    const roleMention = sRole ? `<@&${sRole.id}>` : `Unknown Role`;
+                    const status = owned ? "✅ **Already Owned**" : "🛒 **Available**";
+                    return {
+                        name: `📦 ${s.itemName}`,
+                        value: `💰 **Price:** \`${s.price}\` coins\n🎭 **Role:** ${roleMention}\n✨ **Status:** ${status}`,
+                        inline: false
+                    };
+                });
+                const embed = new EmbedBuilder()
+                    .setAuthor({ name: "🛒 The General Store", iconURL: guild.iconURL({ dynamic: true }) })
+                    .setTitle("Server Exclusive Items")
+                    .setDescription(`Welcome to the marketplace! You currently have \`${data.coins}\` coins to spend.\n\nPage **${page}** of **${totalPages}**`)
+                    .addFields(fields)
+                    .setColor(0x3498DB)
+                    .setThumbnail('https://cdn-icons-png.flaticon.com/512/3081/3081559.png')
+                    .setFooter({ text: `Browse at your leisure • ${guild.name}` });
+
+                const buttons = pagedItems.map(s => {
+                    const sRole = guild.roles.cache.get(s.roleId);
+                    const owned = sRole ? member.roles.cache.has(sRole.id) : false;
+                    const label = owned ? `Owned` : `${s.price} Coins`;
+                    return new ButtonBuilder()
+                        .setCustomId(`shop_buy:${s.itemName}`)
+                        .setLabel(label)
+                        .setEmoji(owned ? '✅' : '🛒')
+                        .setStyle(owned ? ButtonStyle.Secondary : ButtonStyle.Primary)
+                        .setDisabled(owned);
+                });
+                const rows = [];
+                for (let i = 0; i < buttons.length; i += 5) {
+                    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+                }
+
+                const navRow = new ActionRowBuilder();
+                navRow.addComponents(
+                    new ButtonBuilder().setCustomId(`shop_page:${page - 1}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
+                    new ButtonBuilder().setCustomId(`shop_page:${page + 1}`).setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(page === totalPages),
+                    new ButtonBuilder().setCustomId('shop_close').setLabel('Leave Shop').setEmoji('🚪').setStyle(ButtonStyle.Danger)
+                );
+                rows.push(navRow);
+
+                return interaction.editReply({ embeds: [embed], components: rows });
+            }
+
             if (customId.startsWith('shop_buy:')) {
-                const itemName = customId.split(':')[1];
+                const itemName = customId.slice('shop_buy:'.length);
                 const item = (await dbAll('SELECT * FROM server_shop WHERE guildId = ? AND itemName = ?', [guild.id, itemName]))[0];
-                if (!item) { await interaction.followUp({ content: "Item no longer exists in the shop.", ephemeral: true }); return; }
+                if (!item) { 
+                    try {
+                        await interaction.followUp({ content: "Item no longer exists in the shop.", ephemeral: true }); 
+                    } catch (e) {
+                        console.error("FollowUp failed:", e.message);
+                    }
+                    return; 
+                }
                 
                 const member = await guild.members.fetch(user.id);
                 const role = guild.roles.cache.get(item.roleId);
-                if (!role) { await interaction.followUp({ content: `The role associated with this item no longer exists.`, ephemeral: true }); return; }
-                if (member.roles.cache.has(role.id)) { await interaction.followUp({ content: "You already own this role.", ephemeral: true }); return; }
+                if (!role) { 
+                    try {
+                        await interaction.followUp({ content: `The role associated with this item no longer exists.`, ephemeral: true }); 
+                    } catch (e) {
+                        console.error("FollowUp failed:", e.message);
+                    }
+                    return; 
+                }
+                if (member.roles.cache.has(role.id)) { 
+                    try {
+                        await interaction.followUp({ content: "You already own this role.", ephemeral: true }); 
+                    } catch (e) {
+                        console.error("FollowUp failed:", e.message);
+                    }
+                    return; 
+                }
                 
                 const data = await getServerUserData(guild.id, user.id);
-                if (data.coins < item.price) { await interaction.followUp({ content: "Insufficient funds in this server to buy this item.", ephemeral: true }); return; }
+                if (data.coins < item.price) { 
+                    try {
+                        await interaction.followUp({ content: "Insufficient funds in this server to buy this item.", ephemeral: true }); 
+                    } catch (e) {
+                        console.error("FollowUp failed:", e.message);
+                    }
+                    return; 
+                }
                 
-                await member.roles.add(role.id);
+                try {
+                    await member.roles.add(role.id);
+                } catch (e) {
+                    console.error("Role add failed:", e.message);
+                    await interaction.followUp({ content: "❌ Failed to add role. Please check if my role is high enough in the hierarchy!", ephemeral: true });
+                    return;
+                }
                 await addUserCoins(user.id, -item.price, guild.id);
                 
                 const newMember = await guild.members.fetch(user.id);
                 const newData = await getServerUserData(guild.id, user.id);
                 const shopItems = await dbAll('SELECT * FROM server_shop WHERE guildId = ? ORDER BY price ASC', [guild.id]);
                 
-                const fields = shopItems.map(s => {
+                // Pagination logic for update (using page 1 for now or we could track page)
+                const itemsPerPage = 5;
+                const totalPages = Math.ceil(shopItems.length / itemsPerPage);
+                const page = 1; // Default to first page after buy
+                const start = (page - 1) * itemsPerPage;
+                const pagedItems = shopItems.slice(start, start + itemsPerPage);
+
+                const fields = pagedItems.map(s => {
                     const sRole = guild.roles.cache.get(s.roleId);
                     const owned = sRole ? newMember.roles.cache.has(sRole.id) : false;
                     const roleMention = sRole ? `<@&${sRole.id}>` : `Unknown Role`;
@@ -2241,8 +2339,13 @@ client.on(Events.InteractionCreate, async interaction => {
                     return { name: `♟️ ${s.itemName}`, value: `💰 Price: ${s.price} coins\n🎭 Role: ${roleMention}\n✅ Status: ${ownedTxt}`, inline: false };
                 });
                 
-                const embed = new EmbedBuilder().setTitle(`🛒 Server Shop • Balance: ${newData.coins} coins`).addFields(fields).setColor(0x3498DB);
-                const buttons = shopItems.map(s => {
+                const embed = new EmbedBuilder()
+                    .setTitle(`🛒 Server Shop • Balance: ${newData.coins} coins`)
+                    .setDescription(`Page **${page}** of **${totalPages}**`)
+                    .addFields(fields)
+                    .setColor(0x3498DB);
+
+                const buttons = pagedItems.map(s => {
                     const sRole = guild.roles.cache.get(s.roleId);
                     const owned = sRole ? newMember.roles.cache.has(sRole.id) : false;
                     const label = owned ? `Owned: ${s.itemName}` : `Buy ${s.itemName} • ${s.price} Coins`;
@@ -2253,7 +2356,16 @@ client.on(Events.InteractionCreate, async interaction => {
                 for (let i = 0; i < buttons.length; i += 5) {
                     rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
                 }
-                rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('shop_close').setLabel('Close Shop').setEmoji('🧹').setStyle(ButtonStyle.Danger)));
+
+                const navRow = new ActionRowBuilder();
+                if (totalPages > 1) {
+                    navRow.addComponents(
+                        new ButtonBuilder().setCustomId(`shop_page:${page - 1}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
+                        new ButtonBuilder().setCustomId(`shop_page:${page + 1}`).setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(page === totalPages)
+                    );
+                }
+                navRow.addComponents(new ButtonBuilder().setCustomId('shop_close').setLabel('Close Shop').setEmoji('🧹').setStyle(ButtonStyle.Danger));
+                rows.push(navRow);
                 
                 await interaction.editReply({ embeds: [embed], components: rows });
                 
@@ -2856,9 +2968,15 @@ client.on(Events.InteractionCreate, async interaction => {
                     return interaction.editReply({ embeds: [embed] });
                 }
 
+                const page = 1;
+                const itemsPerPage = 5;
+                const totalPages = Math.ceil(shopItems.length / itemsPerPage);
+                const start = (page - 1) * itemsPerPage;
+                const pagedItems = shopItems.slice(start, start + itemsPerPage);
+
                 const member = await guild.members.fetch(user.id);
                 const data = await getServerUserData(guild.id, user.id);
-                const fields = shopItems.map(s => {
+                const fields = pagedItems.map(s => {
                     const sRole = guild.roles.cache.get(s.roleId);
                     const owned = sRole ? member.roles.cache.has(sRole.id) : false;
                     const roleMention = sRole ? `<@&${sRole.id}>` : `Unknown Role`;
@@ -2872,13 +2990,13 @@ client.on(Events.InteractionCreate, async interaction => {
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: "🛒 The General Store", iconURL: guild.iconURL({ dynamic: true }) })
                     .setTitle("Server Exclusive Items")
-                    .setDescription(`Welcome to the marketplace! You currently have \`${data.coins}\` coins to spend.`)
+                    .setDescription(`Welcome to the marketplace! You currently have \`${data.coins}\` coins to spend.\n\nPage **${page}** of **${totalPages}**`)
                     .addFields(fields)
                     .setColor(0x3498DB)
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/3081/3081559.png')
                     .setFooter({ text: `Browse at your leisure • ${guild.name}` });
 
-                const buttons = shopItems.map(s => {
+                const buttons = pagedItems.map(s => {
                     const sRole = guild.roles.cache.get(s.roleId);
                     const owned = sRole ? member.roles.cache.has(sRole.id) : false;
                     const label = owned ? `Owned` : `${s.price} Coins`;
@@ -2893,9 +3011,17 @@ client.on(Events.InteractionCreate, async interaction => {
                 for (let i = 0; i < buttons.length; i += 5) {
                     rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
                 }
-                rows.push(new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('shop_close').setLabel('Leave Shop').setEmoji('🚪').setStyle(ButtonStyle.Danger)
-                ));
+
+                const navRow = new ActionRowBuilder();
+                if (totalPages > 1) {
+                    navRow.addComponents(
+                        new ButtonBuilder().setCustomId(`shop_page:${page - 1}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
+                        new ButtonBuilder().setCustomId(`shop_page:${page + 1}`).setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(page === totalPages)
+                    );
+                }
+                navRow.addComponents(new ButtonBuilder().setCustomId('shop_close').setLabel('Leave Shop').setEmoji('🚪').setStyle(ButtonStyle.Danger));
+                rows.push(navRow);
+
                 return interaction.editReply({ embeds: [embed], components: rows });
             }
 
