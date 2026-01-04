@@ -1838,7 +1838,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🏆 Shop & Leaderboard', 
-                    value: '`/shop` - View roles available in this server\'s shop\n`/item buy <name>` - Purchase a role from the shop\n`/leaderboard [scope] [category]` - View top players' 
+                    value: '`/shop` - View roles available in this server\'s shop\n`/leaderboard [scope] [category]` - View top players' 
                 },
                 { 
                     name: '🛠️ Admin Commands', 
@@ -2424,7 +2424,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🎮 Tactical Games', 
-                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/quiz-rush <bet>`: 5 questions in 30s for 2x rewards!\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/review <url>`: Analyze your chess.com or lichess games.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
+                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/quiz-rush <bet>`: 5 questions in 30s for 2x rewards!\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints. (1m cooldown)\n• `/guess <name>`: Submit your intel for Guess the Player. (Hints cost 5 coins)\n• `/review <url>`: Analyze your chess.com or lichess games.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
                         },
                         { 
                             name: '🏆 Shop & Leaderboard', 
@@ -2432,7 +2432,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🛠️ Command & Control (Admins)', 
-                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only).\n• `/admin-repair`: Force a database integrity check (Owner Only)." 
+                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/shop-delete-all`: Nuke the entire server shop.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only).\n• `/admin-repair`: Force a database integrity check (Owner Only)." 
                         }
                     )
                     .setColor(0x3498DB)
