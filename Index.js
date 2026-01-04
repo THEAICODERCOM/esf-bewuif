@@ -1,6 +1,11 @@
 const { Client, GatewayIntentBits, ApplicationCommandOptionType, EmbedBuilder, PermissionFlagsBits, Events, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js'); 
 const { Chess } = require('chess.js');
 const axios = require('axios');
+const express = require('express');
+const session = require('express-session');
+const passport = require('passport');
+const DiscordStrategy = require('passport-discord').Strategy;
+const ejs = require('ejs');
 
 // New Admin Permission Set: Manage Roles OR Manage Messages
 const ADMIN_PERMS = PermissionFlagsBits.ManageRoles | PermissionFlagsBits.ManageMessages;
@@ -9,14 +14,25 @@ const fs = require('fs');
 const path = require('path');
 
 // ---------------------------
+// DASHBOARD CONFIGURATION
+// ---------------------------
+const DASHBOARD_CONFIG = {
+    CLIENT_ID: '1454968008719073492',         // Updated Client ID
+    CLIENT_SECRET: 'JlLVmGOxyCR0IvC61VDQ6TjBCMpePxnR', // Final Client Secret
+    CALLBACK_URL: 'http://localhost:8080/auth/discord/callback', // Change to your server URL
+    SESSION_SECRET: 'quiz-bot-secret-123',
+    PORT: process.env.PORT || 8080
+};
+
+// ---------------------------
 // Load token
 // ---------------------------
 let DISCORD_TOKEN; 
 try {
     DISCORD_TOKEN = fs.readFileSync(path.join(__dirname, 'token.txt'), 'utf8').trim();
 } catch {
-    console.error("CRITICAL: token.txt is missing!");
-    process.exit(1);
+    console.warn("⚠️ token.txt is missing! Bot will not start, but dashboard will be available.");
+    DISCORD_TOKEN = null;
 }
 
 // ---------------------------
@@ -26,76 +42,63 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 
 /**
  * Robust Database Path Resolution & Data Recovery
- * Searches multiple locations for data.sqlite and picks the one that likely has data.
+ * Prioritizes the local project folder and ensures safety backups.
  */
 function resolveDatabasePath() {
-    const locations = [
-        path.join(__dirname, 'data.sqlite'),           // Current script directory
-        path.join(process.cwd(), 'data.sqlite'),      // Execution directory
-        path.join(__dirname, '..', 'data.sqlite'),    // Parent directory
-        path.join(process.env.HOME || '', 'Desktop', 'Chess-Bot', 'data.sqlite'),
-        path.join(process.env.HOME || '', 'Downloads', 'Chess-Bot copy', 'data.sqlite'),
-        path.join(process.env.HOME || '', 'data.sqlite'), // Home directory
-        '/home/thegoatchessbot/data.sqlite' // Explicitly check the path from user logs
-    ];
+    const primaryLoc = path.join(__dirname, 'data.sqlite');
+    const safetyBackupLoc = '/home/thegoatchessbot/data.sqlite';
 
-    let bestFile = null;
-    let maxSize = -1;
-
-    for (const loc of locations) {
-        if (fs.existsSync(loc)) {
-            try {
-                const stats = fs.statSync(loc);
-                console.log(`🔍 Found database at ${loc} (Size: ${stats.size} bytes)`);
-                if (stats.size > maxSize) {
-                    maxSize = stats.size;
-                    bestFile = loc;
+    // If primary exists, use it.
+    if (fs.existsSync(primaryLoc)) {
+        console.log(`✅ Using primary database at ${primaryLoc}`);
+        
+        // Periodic sync to safety backup if possible
+        try {
+            const stats = fs.statSync(primaryLoc);
+            if (fs.existsSync(safetyBackupLoc)) {
+                const backupStats = fs.statSync(safetyBackupLoc);
+                if (stats.mtimeMs > backupStats.mtimeMs) {
+                    console.log("📤 Primary is newer, updating safety backup...");
+                    fs.copyFileSync(primaryLoc, safetyBackupLoc);
                 }
-            } catch (e) {}
+            } else {
+                console.log("📤 Creating initial safety backup...");
+                fs.copyFileSync(primaryLoc, safetyBackupLoc);
+            }
+        } catch (e) {
+            // Silently fail backup update if permissions or other issues
+        }
+        
+        return primaryLoc;
+    }
+
+    // If primary is missing, check the safety backup
+    if (fs.existsSync(safetyBackupLoc)) {
+        console.log(`🔄 Primary missing. Restoring from safety backup at ${safetyBackupLoc}...`);
+        try {
+            fs.copyFileSync(safetyBackupLoc, primaryLoc);
+            console.log("✅ Successfully restored from safety backup.");
+            return primaryLoc;
+        } catch (e) {
+            console.error(`❌ Failed to restore from backup: ${e.message}`);
         }
     }
 
-    const primaryLoc = path.join(__dirname, 'data.sqlite');
+    // Check other common locations as a last resort
+    const fallbackLocations = [
+        path.join(process.cwd(), 'data.sqlite'),
+        path.join(__dirname, '..', 'data.sqlite'),
+        path.join(process.env.HOME || '', 'data.sqlite')
+    ];
 
-    if (bestFile) {
-        if (bestFile !== primaryLoc) {
+    for (const loc of fallbackLocations) {
+        if (fs.existsSync(loc) && loc !== primaryLoc) {
+            console.log(`🔍 Found fallback database at ${loc}. Restoring...`);
             try {
-                // If primary doesn't exist or is smaller, copy from best backup
-                const primaryExists = fs.existsSync(primaryLoc);
-                const primarySize = primaryExists ? fs.statSync(primaryLoc).size : 0;
-
-                if (!primaryExists || primarySize < maxSize) {
-                    console.log(`🔄 Best data source found at ${bestFile}. Restoring to ${primaryLoc}...`);
-                    fs.copyFileSync(bestFile, primaryLoc);
-                    console.log("✅ Data successfully restored from larger backup.");
-                } else {
-                    console.log("ℹ️ Primary database is already the largest available.");
-                    // SYNC BACKUP: If primary is larger/newer, update the backup at /home/thegoatchessbot/data.sqlite
-                    // This ensures that even if the project folder is wiped, the latest data is safe in the home dir.
-                    const backupLoc = '/home/thegoatchessbot/data.sqlite';
-                    try {
-                        if (fs.existsSync(backupLoc)) {
-                            const backupSize = fs.statSync(backupLoc).size;
-                            if (primarySize > backupSize) {
-                                console.log(`📤 Updating safety backup at ${backupLoc} with latest data...`);
-                                fs.copyFileSync(primaryLoc, backupLoc);
-                                console.log("✅ Safety backup updated.");
-                            }
-                        } else {
-                            // Create it if it doesn't exist
-                            console.log(`📤 Creating initial safety backup at ${backupLoc}...`);
-                            fs.copyFileSync(primaryLoc, backupLoc);
-                            console.log("✅ Safety backup created.");
-                        }
-                    } catch (e) {
-                        console.error(`⚠️ Failed to update safety backup: ${e.message}`);
-                    }
-                }
-            } catch (e) {
-                console.error(`❌ Restoration failed: ${e.message}`);
-            }
+                fs.copyFileSync(loc, primaryLoc);
+                return primaryLoc;
+            } catch (e) {}
         }
-        return primaryLoc;
     }
 
     console.log("⚠️ No existing database found. Creating new at project root.");
@@ -133,7 +136,45 @@ try {
     db = new sqlite3.Database(dbPath);
 }
 
-db.configure('busyTimeout', 5000);
+// Enable WAL mode and checkpointing
+db.serialize(() => {
+    db.run('PRAGMA journal_mode = WAL;');
+    db.run('PRAGMA synchronous = NORMAL;');
+    db.run('PRAGMA busy_timeout = 10000;');
+});
+
+/**
+ * Ensures all WAL data is written to the main database file.
+ * Call this before manual file copies or on exit.
+ */
+function checkpointDatabase() {
+    return new Promise((resolve) => {
+        if (!db) return resolve();
+        db.run('PRAGMA wal_checkpoint(FULL);', (err) => {
+            if (err) console.error("❌ Checkpoint failed:", err);
+            else console.log("✅ Database checkpointed successfully.");
+            resolve();
+        });
+    });
+}
+
+// Checkpoint periodically (every 30 mins)
+setInterval(checkpointDatabase, 30 * 60 * 1000);
+
+// Checkpoint on exit
+process.on('SIGINT', async () => {
+    console.log("🛑 Received SIGINT. Checkpointing database...");
+    await checkpointDatabase();
+    db.close();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    console.log("🛑 Received SIGTERM. Checkpointing database...");
+    await checkpointDatabase();
+    db.close();
+    process.exit(0);
+});
 
 // Add error listener for runtime corruption
 db.on('error', (err) => {
@@ -169,6 +210,7 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS guess_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS server_coins (guildId TEXT NOT NULL, userId TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guildId, userId))');
     db.run('CREATE TABLE IF NOT EXISTS server_shop (guildId TEXT NOT NULL, itemName TEXT NOT NULL, roleId TEXT NOT NULL, price INTEGER NOT NULL, PRIMARY KEY (guildId, itemName))');
+    db.run('CREATE TABLE IF NOT EXISTS question_stats (quizId INTEGER PRIMARY KEY, correct INTEGER NOT NULL DEFAULT 0, wrong INTEGER NOT NULL DEFAULT 0)');
 
     // Migration: Ensure all columns exist in all tables
     const migrations = [
@@ -289,6 +331,11 @@ const getQuizStats = async (userId) => {
 const incQuizStat = async (userId, column) => {
     await dbRun('INSERT OR IGNORE INTO quiz_stats (userId, correct, wrong) VALUES (?, 0, 0)', [userId]);
     return dbRun(`UPDATE quiz_stats SET ${column} = ${column} + 1 WHERE userId = ?`, [userId]);
+};
+
+const incQuestionStat = async (quizId, column) => {
+    await dbRun('INSERT OR IGNORE INTO question_stats (quizId, correct, wrong) VALUES (?, 0, 0)', [quizId]);
+    return dbRun(`UPDATE question_stats SET ${column} = ${column} + 1 WHERE quizId = ?`, [quizId]);
 };
 
 const getGuessActive = userId => dbGet('SELECT playerName, askedAt, hintIndex FROM guess_active WHERE userId = ?', [userId]);
@@ -1699,7 +1746,18 @@ client.once(Events.ClientReady, async () => {
                     { name: 'amount', description: 'Amount to gift', type: ApplicationCommandOptionType.Integer, required: true }
                 ]
             },
-            { name: 'shop', description: 'Browse the server\'s most expensive stuff' },
+            { 
+                name: 'shop', 
+                description: 'Browse the server\'s most expensive stuff',
+                options: [
+                    {
+                        name: 'page',
+                        description: 'Page number to view',
+                        type: ApplicationCommandOptionType.Integer,
+                        required: false
+                    }
+                ]
+            },
             { 
                 name: 'item', 
                 description: 'Manage the server shop (Admins only)',
@@ -1824,29 +1882,30 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.MessageCreate, async message => {
     if (message.author.bot) return;
     if (message.mentions.has(client.user) && !message.mentions.everyone) {
-                const embed = new EmbedBuilder()
+        const embed = new EmbedBuilder()
             .setTitle("🤖 Bot Commands")
             .setDescription("Yo! Here is how you can use the @Quiz Bot to get rich and flex on others:")
             .addFields(
                 { 
                     name: '💎 Economy & Daily', 
-                    value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope] [category]` - View top players (Wealth or Intelligence)\n`/gift <user> <amount>` - Transfer global coins to an ally' 
+                    value: '`/daily` - Claim your daily coins and build a streak\n`/balance [user]` - Check global and server coins\n`/leaderboard [scope] [category]` - View top players\n`/gift <user> <amount>` - Transfer global coins' 
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
-                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/challenge <user> <bet> <type>` - 1v1 battle for a pot of coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your person guess\n`/review <url>` - Analyze your chess.com or lichess games\n`/ration` - View your accuracy and statistics' 
+                    value: '`/quiz <type>` - Start a quiz (Chess, Football, Basketball)\n`/quiz-rush <bet>` - 5 fast questions for 2x rewards!\n`/challenge <user> <bet> <type>` - 1v1 battle for coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your guess\n`/review <url>` - Analyze chess.com or lichess games\n`/ration` - View your accuracy stats' 
                 },
                 { 
-                    name: '🏆 Shop & Leaderboard', 
-                    value: '`/shop` - View roles available in this server\'s shop\n`/leaderboard [scope] [category]` - View top players' 
+                    name: '🛒 Shop & Management', 
+                    value: '`/shop` - Browse and buy server roles\n`/item create/edit/delete` - Manage shop (Admins)\n`/shop-delete-all` - Clear shop (Admins)' 
                 },
                 { 
-                    name: '🛠️ Admin Commands', 
-                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View the question bank\n`/admin-backup` - Generate recovery protocols (Owner Only)\n`/admin-repair` - Force a database integrity check' 
+                    name: '🛠️ Admin & Safety', 
+                    value: '`/addmoney <user> <amount>` - Deposit coins (Admins)\n`/removemoney <user> <amount>` - Seize coins (Admins)\n`/questions [page]` - Audit question bank (Admins)\n`/admin-backup` - Data recovery (Owner)\n`/admin-repair` - DB integrity check (Owner)' 
                 }
             )
             .setColor(0x3498DB)
-            .setFooter({ text: "Tip: Use /help for the full guide to greatness!" })
+            .setThumbnail(client.user.displayAvatarURL())
+            .setFooter({ text: "Tip: Use /help for the ultimate guide!" })
             .setTimestamp();
         
         await message.reply({ embeds: [embed] }).catch(() => {});
@@ -1874,51 +1933,45 @@ async function getRandomQuizForUser(userId, type) {
 // Interaction Handler
 // ---------------------------
 client.on(Events.InteractionCreate, async interaction => {
-    // 1. Handle Autocomplete immediately (no deferral needed/allowed)
+    // 1. Handle Autocomplete immediately (no deferral allowed)
     if (interaction.isAutocomplete()) {
         try {
             const focusedValue = interaction.options.getFocused() || '';
             const guildId = interaction.guildId;
             if (!guildId) return;
 
-            const shopItems = await dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [guildId]);
+            // Use a short timeout for autocomplete DB queries to prevent blocking
+            const shopItems = await Promise.race([
+                dbAll('SELECT itemName FROM server_shop WHERE guildId = ?', [guildId]),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1000))
+            ]).catch(() => []);
+
             const filtered = shopItems
                 .filter(item => item.itemName.toLowerCase().includes(focusedValue.toLowerCase()))
                 .map(item => ({ name: item.itemName, value: item.itemName }));
             
             await interaction.respond(filtered.slice(0, 25)).catch(() => {});
         } catch (e) {
-            console.error("Autocomplete Error:", e.message);
+            // Silently fail autocomplete errors to not spam logs
         }
         return;
     }
 
-    // 2. Handle Commands and Buttons
-    if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
+    // 2. IMMEDIATE DEFERRAL for Commands and Buttons
+    // We do this BEFORE any database work or complex logic.
+    if (interaction.isChatInputCommand()) {
+        await interaction.deferReply().catch(e => console.error(`❌ Deferral Failed: ${e.message}`));
+    } else if (interaction.isButton()) {
+        await interaction.deferUpdate().catch(e => console.error(`❌ DeferUpdate Failed: ${e.message}`));
+    } else {
+        return; // Not a command or button
+    }
+
+    if (!interaction.deferred && !interaction.replied) return;
 
     const { user, guild } = interaction;
 
-    // 3. IMMEDIATE DEFERRAL
-    // This is the most critical part. We must tell Discord we received the interaction 
-    // before doing ANY database work or logic.
-    try {
-        if (interaction.isChatInputCommand()) {
-            await interaction.deferReply().catch(err => {
-                throw new Error(`Deferral Failed: ${err.message} (Code: ${err.code})`);
-            });
-        } else if (interaction.isButton()) {
-            await interaction.deferUpdate().catch(err => {
-                throw new Error(`Button DeferUpdate Failed: ${err.message} (Code: ${err.code})`);
-            });
-        }
-    } catch (e) {
-        // If deferral fails, we cannot respond to this interaction.
-        // This usually happens if the bot is running twice or network is extremely laggy.
-        console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] ${e.message}`);
-        return; 
-    }
-
-    // 4. Background tasks (after deferral)
+    // 3. Background tasks (after deferral)
     if (guild) {
         upsertGuildUser(guild.id, user.id).catch(() => {});
     }
@@ -2009,8 +2062,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 const currentQ = session.questions[session.currentIndex];
-                if (choice === currentQ.answer) {
+                const correct = choice === currentQ.answer;
+                if (correct) {
                     session.correctAnswers++;
+                    await incQuestionStat(currentQ.id, 'correct');
+                } else {
+                    await incQuestionStat(currentQ.id, 'wrong');
                 }
 
                 session.currentIndex++;
@@ -2123,6 +2180,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 const correct = choice === q.answer;
 
                 CHALLENGES.delete(interaction.message.id);
+                
+                if (correct) {
+                    await incQuestionStat(q.id, 'correct');
+                } else {
+                    await incQuestionStat(q.id, 'wrong');
+                }
 
                 const winnerId = correct ? user.id : (user.id === challenge.challengerId ? challenge.targetId : challenge.challengerId);
                 const loserId = winnerId === challenge.challengerId ? challenge.targetId : challenge.challengerId;
@@ -2161,6 +2224,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (timedOut) {
                     await incQuizStat(user.id, 'wrong');
+                    await incQuestionStat(q.id, 'wrong');
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "⏱️ Brain Lag" })
                         .setTitle("Time is up!")
@@ -2172,6 +2236,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (correct) {
                     await incQuizStat(user.id, 'correct');
+                    await incQuestionStat(q.id, 'correct');
                     await addUserCoins(user.id, q.reward, guild.id);
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "✅ Big Brain Energy" })
@@ -2182,6 +2247,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     await interaction.editReply({ embeds: [embed], components: [] });
                 } else {
                     await incQuizStat(user.id, 'wrong');
+                    await incQuestionStat(q.id, 'wrong');
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "❌ Mega Oopsie" })
                         .setTitle("Terrible Attempt")
@@ -2424,7 +2490,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🎮 Tactical Games', 
-                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/quiz-rush <bet>`: 5 questions in 30s for 2x rewards!\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints. (1m cooldown)\n• `/guess <name>`: Submit your intel for Guess the Player. (Hints cost 5 coins)\n• `/review <url>`: Analyze your chess.com or lichess games.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
+                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/quiz-rush <bet>`: 5 questions in 30s for 2x rewards!\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/review <url>`: Analyze your chess.com or lichess games.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
                         },
                         { 
                             name: '🏆 Shop & Leaderboard', 
@@ -2432,7 +2498,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🛠️ Command & Control (Admins)', 
-                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/shop-delete-all`: Nuke the entire server shop.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only).\n• `/admin-repair`: Force a database integrity check (Owner Only)." 
+                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/shop-delete-all`: Wipe the server shop clean.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only).\n• `/admin-repair`: Force a database integrity check (Owner Only)." 
                         }
                     )
                     .setColor(0x3498DB)
@@ -2991,9 +3057,14 @@ client.on(Events.InteractionCreate, async interaction => {
                     return interaction.editReply({ embeds: [embed] });
                 }
 
-                const page = 1;
+                const page = options.getInteger('page') || 1;
                 const itemsPerPage = 5;
                 const totalPages = Math.ceil(shopItems.length / itemsPerPage);
+                
+                if (page > totalPages || page < 1) {
+                    return interaction.editReply(`❌ Invalid page number. Total pages: **${totalPages}**`);
+                }
+
                 const start = (page - 1) * itemsPerPage;
                 const pagedItems = shopItems.slice(start, start + itemsPerPage);
 
@@ -3295,9 +3366,19 @@ client.on(Events.InteractionCreate, async interaction => {
 
     } catch (err) {
         console.error("Interaction Error:", err);
+        let errorMsg = "An unexpected error occurred while processing your request.";
+        
+        if (err.message.includes('SQLITE_IOERR')) {
+            errorMsg = "❌ **Database Disk Error**: The server is currently under heavy load or the database is locked. Please try again in a few seconds.";
+        } else if (err.message.includes('SQLITE_BUSY')) {
+            errorMsg = "❌ **Database Busy**: Too many requests at once. Please try again.";
+        } else if (err.message.includes('Interaction has already been acknowledged')) {
+            return; // Ignore this common Discord.js warning
+        }
+
         const errorEmbed = new EmbedBuilder()
             .setTitle("❌ Command Error")
-            .setDescription("An unexpected error occurred while processing your request.")
+            .setDescription(errorMsg)
             .setColor(0xE74C3C);
         
         try {
@@ -3309,4 +3390,251 @@ client.on(Events.InteractionCreate, async interaction => {
         } catch (e) {}
     }
 });
-client.login(DISCORD_TOKEN);
+
+// ---------------------------
+// Dashboard Web Server
+// ---------------------------
+const app = express();
+const PORT = DASHBOARD_CONFIG.PORT;
+
+// Passport Setup
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
+passport.use(new DiscordStrategy({
+    clientID: DASHBOARD_CONFIG.CLIENT_ID,
+    clientSecret: DASHBOARD_CONFIG.CLIENT_SECRET,
+    callbackURL: DASHBOARD_CONFIG.CALLBACK_URL,
+    scope: ['identify', 'guilds']
+}, (accessToken, refreshToken, profile, done) => {
+    process.nextTick(() => done(null, profile));
+}));
+
+app.set('view engine', 'ejs');
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.urlencoded({ extended: true }));
+app.use(session({
+    secret: DASHBOARD_CONFIG.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Auth Routes
+app.get('/auth/discord', passport.authenticate('discord'));
+app.get('/auth/discord/callback', passport.authenticate('discord', {
+    failureRedirect: '/'
+}), (req, res) => res.redirect('/dashboard'));
+
+app.get('/logout', (req, res) => {
+    req.logout(() => res.redirect('/'));
+});
+
+// Middleware to check auth
+function checkAuth(req, res, next) {
+    if (req.isAuthenticated()) return next();
+    res.redirect('/');
+}
+
+// Dashboard Routes
+app.get('/', (req, res) => {
+    if (req.isAuthenticated()) return res.redirect('/dashboard');
+    res.render('index');
+});
+
+app.get('/dashboard', checkAuth, async (req, res) => {
+    try {
+        const totalCoins = (await dbGet('SELECT SUM(coins) as total FROM users')).total || 0;
+        const totalUsers = (await dbGet('SELECT COUNT(*) as count FROM users')).count || 0;
+        
+        // Filter guilds where user is admin
+        const adminGuilds = req.user.guilds.filter(g => (g.permissions & 0x8) === 0x8);
+
+        res.render('dashboard', {
+            user: req.user,
+            guilds: adminGuilds,
+            stats: { totalCoins, totalUsers }
+        });
+    } catch (e) {
+        res.status(500).send("Dashboard Error: " + e.message);
+    }
+});
+
+app.get('/manage/:guildId', checkAuth, async (req, res) => {
+    const guildId = req.params.guildId;
+    // Redirect to shop management by default for that guild
+    res.redirect(`/shop?guildId=${guildId}`);
+});
+
+app.get('/shop', checkAuth, async (req, res) => {
+    try {
+        const adminGuilds = req.user.guilds.filter(g => (g.permissions & 0x8) === 0x8);
+        if (adminGuilds.length === 0) return res.status(403).send("You don't have admin permissions in any servers.");
+        
+        const selectedGuildId = req.query.guildId || adminGuilds[0].id;
+        const items = await dbAll('SELECT * FROM server_shop WHERE guildId = ?', [selectedGuildId]);
+
+        // Fetch roles for the selected guild
+        let roles = [];
+        try {
+            const guild = await client.guilds.fetch(selectedGuildId);
+            if (guild) {
+                const guildRoles = await guild.roles.fetch();
+                roles = guildRoles
+                    .filter(r => r.name !== '@everyone' && !r.managed)
+                    .map(r => ({ id: r.id, name: r.name }))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+            }
+        } catch (e) {
+            console.error("Error fetching roles:", e.message);
+        }
+
+        res.render('shop', {
+            user: req.user,
+            items: items,
+            selectedGuildId: selectedGuildId,
+            guilds: adminGuilds,
+            roles: roles
+        });
+    } catch (e) {
+        res.status(500).send("Shop Error: " + e.message);
+    }
+});
+
+app.post('/shop/add', checkAuth, async (req, res) => {
+    const { guildId, itemName, roleId, price } = req.body;
+    try {
+        await dbRun('INSERT INTO server_shop (guildId, itemName, roleId, price) VALUES (?, ?, ?, ?)', [guildId, itemName, roleId, parseInt(price)]);
+        res.redirect(`/shop?guildId=${guildId}`);
+    } catch (e) {
+        res.status(500).send("Error adding item: " + e.message);
+    }
+});
+
+app.post('/shop/delete', checkAuth, async (req, res) => {
+    const { guildId, itemName } = req.body;
+    try {
+        await dbRun('DELETE FROM server_shop WHERE guildId = ? AND itemName = ?', [guildId, itemName]);
+        res.redirect(`/shop?guildId=${guildId}`);
+    } catch (e) {
+        res.status(500).send("Error deleting item: " + e.message);
+    }
+});
+
+app.get('/economy', checkAuth, async (req, res) => {
+    try {
+        const adminGuilds = req.user.guilds.filter(g => (g.permissions & 0x8) === 0x8);
+        if (adminGuilds.length === 0) return res.status(403).send("You don't have admin permissions in any servers.");
+
+        const selectedGuildId = req.query.guildId || adminGuilds[0].id;
+        const users = await dbAll('SELECT userId, coins FROM server_coins WHERE guildId = ? ORDER BY coins DESC LIMIT 100', [selectedGuildId]);
+
+        res.render('economy', {
+            user: req.user,
+            users: users,
+            selectedGuildId: selectedGuildId,
+            guilds: adminGuilds
+        });
+    } catch (e) {
+        res.status(500).send("Economy Error: " + e.message);
+    }
+});
+
+app.post('/economy/update', checkAuth, async (req, res) => {
+    const { guildId, userId, amount } = req.body;
+    try {
+        await addUserCoins(userId, parseInt(amount), guildId);
+        res.redirect(`/economy?guildId=${guildId}`);
+    } catch (e) {
+        res.status(500).send("Error updating coins: " + e.message);
+    }
+});
+
+app.get('/intelligence', checkAuth, async (req, res) => {
+    try {
+        const adminGuilds = req.user.guilds.filter(g => (g.permissions & 0x8) === 0x8);
+        if (adminGuilds.length === 0) return res.status(403).send("Forbidden");
+
+        const qStats = await dbAll('SELECT * FROM question_stats');
+        
+        // Map stats to QUIZ_POOL data
+        const enrichedStats = qStats.map(stat => {
+            const q = QUIZ_POOL.find(p => p.id === stat.quizId);
+            if (!q) return null;
+            const total = stat.correct + stat.wrong;
+            return {
+                ...stat,
+                question: q.question,
+                type: q.type,
+                total,
+                accuracy: total > 0 ? ((stat.correct / total) * 100).toFixed(1) : 0
+            };
+        }).filter(Boolean);
+
+        // Category Popularity
+        const categories = {};
+        enrichedStats.forEach(s => {
+            if (!categories[s.type]) categories[s.type] = { correct: 0, wrong: 0, total: 0 };
+            categories[s.type].correct += s.correct;
+            categories[s.type].wrong += s.wrong;
+            categories[s.type].total += s.total;
+        });
+
+        // Hardest Questions (Wall of Shame) - Top 10 with lowest accuracy and at least 1 attempt
+        const wallOfShame = [...enrichedStats]
+            .filter(s => s.total > 0)
+            .sort((a, b) => a.accuracy - b.accuracy)
+            .slice(0, 10);
+
+        res.render('intelligence', {
+            user: req.user,
+            categories,
+            wallOfShame,
+            totalAnswered: enrichedStats.reduce((acc, s) => acc + s.total, 0)
+        });
+    } catch (e) {
+        res.status(500).send("Intelligence Error: " + e.message);
+    }
+});
+
+app.get('/maintenance', checkAuth, async (req, res) => {
+    try {
+        const adminGuilds = req.user.guilds.filter(g => (g.permissions & 0x8) === 0x8);
+        if (adminGuilds.length === 0) return res.status(403).send("Forbidden");
+
+        const dbPath = path.join(__dirname, 'data.sqlite');
+        const stats = fs.existsSync(dbPath) ? fs.statSync(dbPath) : { size: 0 };
+        
+        res.render('maintenance', {
+            user: req.user,
+            dbInfo: {
+                path: dbPath,
+                size: (stats.size / 1024).toFixed(2) + ' KB',
+                exists: fs.existsSync(dbPath)
+            },
+            uptime: process.uptime()
+        });
+    } catch (e) {
+        res.status(500).send("Maintenance Error: " + e.message);
+    }
+});
+
+app.get('/maintenance/export', checkAuth, (req, res) => {
+    const dbPath = path.join(__dirname, 'data.sqlite');
+    if (fs.existsSync(dbPath)) {
+        res.download(dbPath);
+    } else {
+        res.status(404).send("Database file not found.");
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`🌐 Dashboard is live at http://localhost:${PORT}`);
+});
+
+if (DISCORD_TOKEN) {
+    client.login(DISCORD_TOKEN);
+} else {
+    console.error("❌ DISCORD_TOKEN is missing. Bot is offline.");
+}
