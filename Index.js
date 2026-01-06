@@ -1892,7 +1892,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
-                    value: '`/quiz <type>` - Start a quiz (Chess, Football, Basketball)\n`/quiz-rush <bet>` - 5 fast questions for 2x rewards!\n`/challenge <user> <bet> <type>` - 1v1 battle for coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your guess\n`/review <url>` - Analyze chess.com or lichess games\n`/ration` - View your accuracy stats' 
+                    value: '`/quiz <type>` - Start a quiz (Chess, Football, Basketball)\n`/quiz-rush <bet>` - 5 fast questions for 2x rewards!\n`/challenge <user> <bet> <type>` - 1v1 battle for coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your guess\n`/ration` - View your accuracy stats' 
                 },
                 { 
                     name: '🛒 Shop & Management', 
@@ -2490,7 +2490,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         { 
                             name: '🎮 Tactical Games', 
-                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/quiz-rush <bet>`: 5 questions in 30s for 2x rewards!\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/review <url>`: Analyze your chess.com or lichess games.\n• `/ration`: Review your tactical accuracy and quiz statistics." 
+                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/quiz-rush <bet>`: 5 questions in 30s for 2x rewards!\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints.\n• `/guess <name>`: Submit your intel for Guess the Player.\n• `/ration`: View your tactical accuracy and quiz statistics." 
                         },
                         { 
                             name: '🏆 Shop & Leaderboard', 
