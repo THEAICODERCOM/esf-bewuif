@@ -5,54 +5,17 @@ const ADMIN_PERMS = PermissionFlagsBits.ManageRoles | PermissionFlagsBits.Manage
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const path = require('path');
-const express = require('express');
-const bodyParser = require('body-parser');
 
 // ---------------------------
 // Load token
 // ---------------------------
 let DISCORD_TOKEN; 
-let TOPGG_WEBHOOK_AUTH;
 try {
-    const tokenPath = path.join(__dirname, 'token.txt');
-    if (!fs.existsSync(tokenPath)) {
-        console.error(`CRITICAL: token.txt is missing at ${tokenPath}`);
-        process.exit(1);
-    }
-    DISCORD_TOKEN = fs.readFileSync(tokenPath, 'utf8').trim();
-    
-    try {
-        const authPath = path.join(__dirname, 'topgg_auth.txt');
-        if (fs.existsSync(authPath)) {
-            TOPGG_WEBHOOK_AUTH = fs.readFileSync(authPath, 'utf8').trim();
-            console.log("✅ Webhook security enabled (topgg_auth.txt loaded).");
-        } else {
-            console.log("⚠️ topgg_auth.txt missing. Webhook security disabled.");
-            console.log(`👉 To enable security, create a file at: ${authPath} with a secret password.`);
-            TOPGG_WEBHOOK_AUTH = null;
-        }
-    } catch (err) {
-        console.log(`⚠️ Error reading topgg_auth.txt: ${err.message}`);
-        TOPGG_WEBHOOK_AUTH = null;
-    }
-} catch (err) {
-    console.error(`CRITICAL: Failed to load token: ${err.message}`);
+    DISCORD_TOKEN = fs.readFileSync(path.join(__dirname, 'token.txt'), 'utf8').trim();
+} catch {
+    console.error("CRITICAL: token.txt is missing!");
     process.exit(1);
 }
-
-const VOTE_URL = 'https://top.gg/bot/1454968008719073492/vote';
-
-const addVoteFooter = (embed, userData) => {
-    const twelveHours = 12 * 60 * 60 * 1000;
-    const hasActiveVote = userData && userData.lastVote && (Date.now() - userData.lastVote) < twelveHours;
-    
-    if (hasActiveVote) {
-        embed.setFooter({ text: "✨ 20% Coin Boost Active! Thanks for voting!" });
-    } else {
-        embed.setFooter({ text: "💡 Vote for a 20% coin boost on every command! /vote" });
-    }
-    return embed;
-};
 
 // ---------------------------
 // Client & Database Setup
@@ -191,16 +154,16 @@ const dbGet = (sql, params = []) => new Promise((res, rej) => db.get(sql, params
 
 const CHALLENGES = new Map();
 
+const VOTE_URL = 'https://top.gg/bot/1454968008719073492/vote';
+
 const getUserData = async (userId) => {
-    let r = await dbGet('SELECT coins, lastDaily, streak, lastVote, voteReminder FROM users WHERE userId = ?', [userId]);
+    let r = await dbGet('SELECT coins, lastDaily, streak, lastVote, voteReminder, lastReminded FROM users WHERE userId = ?', [userId]);
     if (!r) {
-        await dbRun('INSERT OR IGNORE INTO users (userId, coins, lastDaily, streak, lastVote, voteReminder) VALUES (?,0,0,0,0,1)', [userId]);
-        return { coins: 0, lastDaily: 0, streak: 0, lastVote: 0, voteReminder: 1 };
+        await dbRun('INSERT OR IGNORE INTO users (userId, coins, lastDaily, streak, lastVote, voteReminder, lastReminded) VALUES (?,0,0,0,0,1,0)', [userId]);
+        return { coins: 0, lastDaily: 0, streak: 0, lastVote: 0, voteReminder: 1, lastReminded: 0 };
     }
     return r;
 };
-
-const setVoteReminder = (userId, enabled) => dbRun('UPDATE users SET voteReminder = ? WHERE userId = ?', [enabled ? 1 : 0, userId]);
 
 const hasVoted = (userData) => {
     if (!userData || !userData.lastVote) return false;
@@ -208,28 +171,31 @@ const hasVoted = (userData) => {
     return (Date.now() - userData.lastVote) < twelveHours;
 };
 
-const addUserCoins = async (userId, amount, guildId = null) => {
-    let finalAmount = amount;
-    const userData = await getUserData(userId);
-    
-    const voted = hasVoted(userData);
-    if (amount > 0 && voted) {
-        finalAmount = Math.floor(amount * 1.2);
-        console.log(`[BOOST] User ${userId} got 20% boost! ${amount} -> ${finalAmount}`);
-    } else if (amount > 0) {
-        console.log(`[BOOST] User ${userId} NO boost. Voted: ${voted}, lastVote: ${userData.lastVote}`);
-    }
+const setVoteReminder = (userId, enabled) => {
+    return dbRun('UPDATE users SET voteReminder = ? WHERE userId = ?', [enabled ? 1 : 0, userId]);
+};
 
+const addVoteFooter = (embed, userData) => {
+    const voted = hasVoted(userData);
+    if (voted) {
+        embed.setFooter({ text: "✅ You've already voted! Come back in 12h to vote again for 100 coins." });
+    } else {
+        embed.setFooter({ text: "💡 Tip: Use /vote to get 100 coins immediately!" });
+    }
+    return embed;
+};
+
+const addUserCoins = async (userId, amount, guildId = null) => {
     // Always update global coins
     await dbRun('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId]);
-    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [finalAmount, userId]);
+    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [amount, userId]);
     
     // If guildId is provided, also update server-specific coins
     if (guildId) {
         await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
-        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
+        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [amount, guildId, userId]);
     }
-    return finalAmount;
+    return amount;
 };
 
 const getServerUserData = async (guildId, userId) => {
@@ -1719,13 +1685,10 @@ client.once(Events.ClientReady, async () => {
                     }
                 ]
             },
-            {
-                name: 'vote',
-                description: 'Get a 20% coin boost for 12 hours by voting for the bot!'
-            },
-            {
-                name: 'remind',
-                description: 'Toggle vote reminders on/off',
+            { name: 'vote', description: 'Vote for the bot on Top.gg to get 100 coins immediately!' },
+            { 
+                name: 'remind', 
+                description: 'Toggle vote reminders (pings you 12h after voting)',
                 options: [
                     {
                         name: 'status',
@@ -1739,10 +1702,7 @@ client.once(Events.ClientReady, async () => {
                     }
                 ]
             },
-            {
-                name: 'checkvote',
-                description: 'Debug your voting status and boost'
-            },
+            { name: 'checkvote', description: 'Debug: Check your current voting status' },
             { name: 'help', description: 'The ultimate guide to dominating the server' }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
@@ -1760,7 +1720,7 @@ client.on(Events.MessageCreate, async message => {
             .addFields(
                 { 
                     name: '💎 Economy & Daily', 
-                    value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope] [category]` - View top players (Wealth or Intelligence)\n`/gift <user> <amount>` - Transfer global coins to an ally\n`/vote` - Get a 20% coin boost for 12 hours!\n`/remind <on/off>` - Toggle vote reminders' 
+                    value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope] [category]` - View top players (Wealth or Intelligence)\n`/gift <user> <amount>` - Transfer global coins to an ally' 
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
@@ -1776,7 +1736,7 @@ client.on(Events.MessageCreate, async message => {
                 }
             )
             .setColor(0x3498DB)
-            .setFooter({ text: "Tip: Use /vote for a 20% coin boost! /help for more info." })
+            .setFooter({ text: "Tip: Use /help for the full guide to greatness!" })
             .setTimestamp();
         
         await message.reply({ embeds: [embed] }).catch(() => {});
@@ -1829,20 +1789,22 @@ client.on(Events.InteractionCreate, async interaction => {
     const { user, guild } = interaction;
 
     // 3. IMMEDIATE DEFERRAL
-    if (interaction.deferred || interaction.replied) return;
-
+    // This is the most critical part. We must tell Discord we received the interaction 
+    // before doing ANY database work or logic.
     try {
         if (interaction.isChatInputCommand()) {
-            await interaction.deferReply();
+            await interaction.deferReply().catch(err => {
+                throw new Error(`Deferral Failed: ${err.message} (Code: ${err.code})`);
+            });
         } else if (interaction.isButton()) {
-            await interaction.deferUpdate();
+            await interaction.deferUpdate().catch(err => {
+                throw new Error(`Button DeferUpdate Failed: ${err.message} (Code: ${err.code})`);
+            });
         }
     } catch (e) {
-        if (e.code === 10062) {
-            // SILENT FAIL for duplicate instance
-            return;
-        }
-        console.error(`❌ Deferral Error: ${e.message}`);
+        // If deferral fails, we cannot respond to this interaction.
+        // This usually happens if the bot is running twice or network is extremely laggy.
+        console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] ${e.message}`);
         return; 
     }
 
@@ -1888,35 +1850,32 @@ client.on(Events.InteractionCreate, async interaction => {
                     const embed = new EmbedBuilder()
                         .setTitle("⚡ QUIZ RUSH CONTINUES!")
                         .setDescription(`**Question ${session.currentIndex + 1}/5**\n\n${nextQ.question}\n\n⏱️ Time Left: **${timeLeft}s**\n💰 Potential Win: **${session.bet * 2} coins**`)
-                        .setColor(0xFFA500)
-                        .setFooter({ text: "Keep going! Speed is everything!" });
+                        .setColor(0xFFA500);
 
                     const row = new ActionRowBuilder().addComponents(
                         choices.map(c => new ButtonBuilder().setCustomId(`rush_choice:${c}`).setLabel(c).setStyle(ButtonStyle.Primary))
                     );
 
-                    await interaction.editReply({ embeds: [embed], components: [row] });
+                    await interaction.editReply({ embeds: [addVoteFooter(embed, await getUserData(user.id))], components: [row] });
                 } else {
                     // Game Ended
                     RUSH_SESSIONS.delete(user.id);
                     const win = session.correctAnswers === 5;
                     const reward = win ? session.bet * 2 : 0;
-                    
-                    let actualReward = 0;
+
                     if (win) {
-                        actualReward = await addUserCoins(user.id, reward, guild.id);
+                        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [reward, guild.id, user.id]);
                     }
 
                     const resultEmbed = new EmbedBuilder()
                         .setTitle(win ? "🎊 RUSH COMPLETED!" : "💀 RUSH FAILED")
                         .setDescription(win 
-                            ? `Incredible speed! You got **5/5** correct and won **${actualReward} coins**!${actualReward > reward ? " (Includes 20% Vote Boost!)" : ""}` 
+                            ? `Incredible speed! You got **5/5** correct and won **${reward} coins**!` 
                             : `You got **${session.correctAnswers}/5** correct. You need 5/5 to win the 2x reward. You lost your bet.`)
                         .setColor(win ? 0x2ECC71 : 0xE74C3C)
                         .setTimestamp();
 
-                    const userData = await getUserData(user.id);
-                    await interaction.editReply({ embeds: [addVoteFooter(resultEmbed, userData)], components: [] });
+                    await interaction.editReply({ embeds: [addVoteFooter(resultEmbed, await getUserData(user.id))], components: [] });
                 }
                 return;
             }
@@ -2039,14 +1998,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (correct) {
                     await incQuizStat(user.id, 'correct');
-                    const actualReward = await addUserCoins(user.id, q.reward, guild.id);
+                    await addUserCoins(user.id, q.reward, guild.id);
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "✅ Big Brain Energy" })
                         .setTitle("Galaxy Brain!")
                         .setDescription(`**${choice}** is correct!`)
-                        .addFields({ name: '💰 Reward Earned', value: `\`${actualReward}\` coins${actualReward > q.reward ? " (Includes 20% Vote Boost!)" : ""}`, inline: true })
+                        .addFields({ name: '💰 Reward Earned', value: `\`${q.reward}\` coins`, inline: true })
                         .setColor(0x2ECC71);
-                    const userData = await getUserData(user.id);
                     await interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [] });
                 } else {
                     await incQuizStat(user.id, 'wrong');
@@ -2055,7 +2013,6 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setTitle("Terrible Attempt")
                         .setDescription(`That wasn't quite right. The correct answer was: **${q.answer}**`)
                         .setColor(0xE74C3C);
-                    const userData = await getUserData(user.id);
                     await interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [] });
                 }
                 return;
@@ -2281,8 +2238,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (interaction.isChatInputCommand()) {
         const { commandName, options } = interaction;
-        
-        // 1. Handle /vote and /remind FIRST (High Priority)
+
+        // 1. Handle /vote, /remind, and /checkvote FIRST (High Priority)
         if (commandName === 'vote' || commandName === 'remind' || commandName === 'checkvote') {
             const userData = await getUserData(user.id);
 
@@ -2298,7 +2255,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                     const embed = new EmbedBuilder()
                         .setTitle("✅ Already Voted!")
-                        .setDescription(`You have an active **20% Coin Boost**!\n\nYou can vote again in **${hours}h ${minutes}m** to renew your boost.`)
+                        .setDescription(`You've already claimed your reward for this 12-hour window.\n\nYou can vote again in **${hours}h ${minutes}m** to get another **100 coins**!`)
                         .setColor(0x00FF00)
                         .setTimestamp();
                     
@@ -2307,7 +2264,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 const embed = new EmbedBuilder()
                     .setTitle("🗳️ Vote for Quiz Bot")
-                    .setDescription(`Support us by voting on Top.gg and receive a **20% Coin Boost** for 12 hours!\n\n[**Click here to vote!**](${VOTE_URL})`)
+                    .setDescription(`Support us by voting on Top.gg and receive **100 Coins** immediately!\n\n[**Click here to vote!**](${VOTE_URL})`)
                     .setColor(0x00FF00)
                     .setTimestamp();
                 
@@ -2340,9 +2297,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setTitle("🔍 Voting Status Debug")
                     .addFields(
                         { name: "User ID", value: user.id, inline: true },
-                        { name: "Active Boost", value: voted ? "✅ YES (20%)" : "❌ NO", inline: true },
+                        { name: "Vote Active", value: voted ? "✅ YES" : "❌ NO", inline: true },
                         { name: "Last Vote Found", value: lastVoteTime, inline: false },
-                        { name: "Minutes Remaining", value: voted ? `${timeRemaining}m` : "N/A", inline: true }
+                        { name: "Minutes Until Next Reward", value: voted ? `${timeRemaining}m` : "READY!", inline: true }
                     )
                     .setColor(voted ? 0x00FF00 : 0xFF0000)
                     .setTimestamp();
@@ -2351,7 +2308,6 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
-        // 2. Handle all other commands
         const userData = await getUserData(user.id);
 
         if (commandName === 'help') {
@@ -2361,7 +2317,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .addFields(
                         { 
                             name: '💎 Economy & Wealth', 
-                            value: "• `/daily`: Claim your daily allowance. (Streak bonus included!)\n• `/gift <user> <amount>`: Transfer global coins to an ally.\n• `/balance [user]`: Check your Global and Server-specific vaults.\n• `/vote`: Get a 20% coin boost for 12 hours!\n• `/remind <on/off>`: Toggle vote reminders." 
+                            value: "• `/daily`: Claim your daily allowance. (Streak bonus included!)\n• `/gift <user> <amount>`: Transfer global coins to an ally.\n• `/balance [user]`: Check your Global and Server-specific vaults.\n• `/vote`: Get 100 coins for supporting us!\n• `/remind <on/off>`: Toggle vote reminders." 
                         },
                         { 
                             name: '🎮 Tactical Games', 
@@ -2431,14 +2387,13 @@ client.on(Events.InteractionCreate, async interaction => {
                 const embed = new EmbedBuilder()
                     .setTitle("⚡ QUIZ RUSH STARTED!")
                     .setDescription(`**Question 1/5**\n\n${q.question}\n\n⏱️ Time Left: **30s**\n💰 Potential Win: **${bet * 2} coins**`)
-                    .setColor(0xFFA500)
-                    .setFooter({ text: "Hurry! You have 30 seconds to finish all 5!" });
+                    .setColor(0xFFA500);
 
                 const row = new ActionRowBuilder().addComponents(
                     choices.map(c => new ButtonBuilder().setCustomId(`rush_choice:${c}`).setLabel(c).setStyle(ButtonStyle.Primary))
                 );
 
-                return interaction.editReply({ embeds: [embed], components: [row] });
+                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [row] });
             }
                 if (commandName === 'quiz') {
                 const type = options.getString('type') || 'chess'; // Default to chess if not provided
@@ -2495,7 +2450,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setDescription(`**Question:**\n${q.question}\n\n⏱️ **Time Limit:** \`60 seconds\`\n📝 **Choose the correct answer below!**`)
                     .setColor(0x2ECC71)
                     .addFields({ name: '💰 Potential Reward', value: `\`${q.reward}\` coins`, inline: true })
-                    .setFooter({ text: `Good luck, ${user.username}!` })
                     .setTimestamp();
 
                 const buttons = new ActionRowBuilder().addComponents(
@@ -2507,7 +2461,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     )
                 );
 
-                return interaction.editReply({ embeds: [embed], components: [buttons] });
+                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [buttons] });
             }
 
             if (commandName === 'guesstheplayer') {
@@ -2542,8 +2496,7 @@ client.on(Events.InteractionCreate, async interaction => {
                             .addFields(
                                 { name: '💰 Cost', value: `Next hint: \`${hintCost} coins\``, inline: true },
                                 { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
-                            )
-                            .setFooter({ text: "Use /guess to submit your answer" });
+                            );
                         
                         const label = idx >= entry.hints.length ? 'All Hints Gathered' : `Next Hint (${hintCost} Coins)`;
                         const rowComp = new ActionRowBuilder().addComponents(
@@ -2553,7 +2506,7 @@ client.on(Events.InteractionCreate, async interaction => {
                                 .setStyle(idx >= entry.hints.length ? ButtonStyle.Secondary : ButtonStyle.Primary)
                                 .setDisabled(idx >= entry.hints.length)
                         );
-                        return interaction.editReply({ embeds: [embed], components: [rowComp] });
+                        return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [rowComp] });
                     }
                 }
                 
@@ -2575,13 +2528,12 @@ client.on(Events.InteractionCreate, async interaction => {
                     .addFields(
                         { name: '💰 Cost', value: 'Next intel: `5 coins`', inline: true },
                         { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
-                    )
-                    .setFooter({ text: "Use /guess to answer • Intel costs 5 coins" });
+                    );
 
                 const rowBtn = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('guess_next').setLabel('Next Intel (5 Coins)').setStyle(ButtonStyle.Primary)
                 );
-                return interaction.editReply({ embeds: [embed], components: [rowBtn] });
+                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [rowBtn] });
             }
 
             if (commandName === 'daily') {
@@ -2610,12 +2562,15 @@ client.on(Events.InteractionCreate, async interaction => {
                 const streakBonus = Math.min((newStreak - 1) * 5, 50); // Max 50 bonus
                 const totalReward = baseReward + streakBonus;
 
+                // Use addUserCoins to grant the reward
+                const finalReward = await addUserCoins(user.id, totalReward, guild.id);
+                
+                // Update lastDaily and streak
                 await dbRun('UPDATE users SET lastDaily = ?, streak = ? WHERE userId = ?', [now, newStreak, user.id]);
-                const actualReward = await addUserCoins(user.id, totalReward, guild.id);
                 
                 const embed = new EmbedBuilder()
                     .setTitle("💰 Daily Stipend Claimed")
-                    .setDescription(`You received **${actualReward} coins**!${actualReward > totalReward ? " (Includes 20% Vote Boost!)" : ""}`)
+                    .setDescription(`You received **${finalReward} coins**!`)
                     .addFields(
                         { name: "🔥 Streak", value: `${newStreak} days`, inline: true },
                         { name: "🎁 Bonus", value: `${streakBonus} coins`, inline: true }
@@ -2623,7 +2578,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/1162/1162951.png')
                     .setColor("#FFD700");
 
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] });
+                return interaction.editReply({ embeds: [addVoteFooter(embed, data)] });
             }
 
             if (commandName === 'gift') {
@@ -2748,12 +2703,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 await setGuessCooldown(user.id);
 
                 if (correct) {
-                    const actualReward = await addUserCoins(user.id, 10, guild.id);
+                    await addUserCoins(user.id, 10, guild.id);
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "🎯 Target Found" })
                         .setTitle("Target Identified!")
                         .setDescription(`Insane brain power! The person was indeed **${active.playerName}**.`)
-                        .addFields({ name: '💰 Reward Bounty', value: `\`${actualReward}\` coins${actualReward > 10 ? " (Includes 20% Vote Boost!)" : ""}`, inline: true })
+                        .addFields({ name: '💰 Reward Bounty', value: '`10` coins', inline: true })
                         .setColor(0x2ECC71)
                         .setThumbnail('https://cdn-icons-png.flaticon.com/512/190/190411.png');
                     return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [] });
@@ -2765,8 +2720,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setDescription(`Your intelligence was incorrect. The player has escaped.`)
                     .addFields({ name: '👤 Actual Identity', value: `||${active.playerName}||`, inline: true })
                     .setColor(0xE74C3C)
-                    .setThumbnail('https://cdn-icons-png.flaticon.com/512/1156/1156641.png');
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [] });
+                    .setThumbnail('https://cdn-icons-png.flaticon.com/512/1156/1156641.png')
+                    .setFooter({ text: "Wait for the cooldown to start a new mission." });
+                return interaction.editReply({ embeds: [embed], components: [] });
             }
             if (commandName === 'questions') {
                 const isAdmin = guild && (interaction.memberPermissions?.has(PermissionFlagsBits.ManageRoles) || interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages));
@@ -3142,11 +3098,23 @@ client.on(Events.InteractionCreate, async interaction => {
         } catch (e) {}
     }
 });
+client.login(DISCORD_TOKEN);
+
 // ---------------------------
-// Top.gg Webhook & Reminders
+// Express Webhook Server
 // ---------------------------
+const express = require('express');
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
+
+// Load Webhook Auth Token
+let TOPGG_WEBHOOK_AUTH;
+try {
+    TOPGG_WEBHOOK_AUTH = fs.readFileSync(path.join(__dirname, 'topgg_auth.txt'), 'utf8').trim();
+    console.log("✅ Webhook security enabled (topgg_auth.txt loaded).");
+} catch {
+    console.warn("⚠️ topgg_auth.txt missing. Webhook security disabled.");
+}
 
 app.post('/webhook', async (req, res) => {
     const auth = req.headers.authorization;
@@ -3174,19 +3142,24 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`[WEBHOOK] 🗳️ User ${user} voted on Top.gg! Updating database...`);
     try {
+        // Update vote timestamp
         await dbRun('UPDATE users SET lastVote = ?, lastReminded = 0 WHERE userId = ?', [Date.now(), user]);
-        console.log(`[WEBHOOK] ✅ Database updated for user ${user}`);
+        
+        // GRANT 100 COINS IMMEDIATELY
+        await addUserCoins(user, 100);
+        
+        console.log(`[WEBHOOK] ✅ Database updated and 100 coins granted for user ${user}`);
     } catch (err) {
         console.error(`[WEBHOOK] ❌ Database update failed: ${err.message}`);
     }
     
-    // Optional: Send a DM to the user thanking them
+    // Send a DM to the user thanking them
     try {
         const discordUser = await client.users.fetch(user);
         if (discordUser) {
             const embed = new EmbedBuilder()
                 .setTitle("✨ Thanks for Voting!")
-                .setDescription("Your **20% Coin Boost** is now active for the next 12 hours on all commands! 🚀")
+                .setDescription("You just received **100 Coins**! 💰\n\nSupport like yours keeps the bot running. You can vote again in 12 hours for more rewards!")
                 .setColor(0x00FF00)
                 .setTimestamp();
             await discordUser.send({ embeds: [embed] }).catch(() => {});
@@ -3199,53 +3172,44 @@ app.post('/webhook', async (req, res) => {
     res.status(200).send({ ok: true });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🚀 Webhook server listening on port ${PORT}`);
+app.listen(3000, () => {
+    console.log("🚀 Webhook server listening on port 3000");
 });
 
-// Background task: Check for expired votes and send reminders
+// ---------------------------
+// Background Reminder Task
+// ---------------------------
 setInterval(async () => {
-    const twelveHours = 12 * 60 * 60 * 1000;
-    const now = Date.now();
-    
-    // Find users whose vote expired (>12h ago), who have reminders ON, and haven't been reminded for this vote yet
-    const usersToRemind = await dbAll(
-        'SELECT userId FROM users WHERE voteReminder = 1 AND lastVote > 0 AND lastVote < ? AND lastReminded < lastVote',
-        [now - twelveHours]
-    );
+    try {
+        const now = Date.now();
+        const twelveHours = 12 * 60 * 60 * 1000;
+        
+        // Find users who voted > 12h ago, have reminders ON, and haven't been reminded yet
+        const usersToRemind = await dbAll(
+            'SELECT userId FROM users WHERE voteReminder = 1 AND lastReminded = 0 AND lastVote > 0 AND ? - lastVote >= ?',
+            [now, twelveHours]
+        );
 
-    for (const row of usersToRemind) {
-        try {
-            const user = await client.users.fetch(row.userId);
-            if (user) {
-                const embed = new EmbedBuilder()
-                    .setTitle("⏰ Vote Expired!")
-                    .setDescription(`Your 12-hour coin boost has expired. Vote again to reclaim your **20% bonus**!\n\n[**Click here to vote!**](${VOTE_URL})`)
-                    .setColor(0xE67E22)
-                    .setTimestamp();
-                
-                const rowBtn = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setLabel('Vote Now').setURL(VOTE_URL).setStyle(ButtonStyle.Link)
-                );
-
-                await user.send({ content: `<@${user.id}>`, embeds: [embed], components: [rowBtn] }).catch(() => {});
-                await dbRun('UPDATE users SET lastReminded = ? WHERE userId = ?', [now, row.userId]);
+        for (const u of usersToRemind) {
+            try {
+                const user = await client.users.fetch(u.userId);
+                if (user) {
+                    const embed = new EmbedBuilder()
+                        .setTitle("🔔 Vote Reminder")
+                        .setDescription(`You can now vote again on Top.gg to get another **100 coins**!\n\n[**Vote here**](${VOTE_URL})`)
+                        .setColor(0xFFA500)
+                        .setTimestamp();
+                    
+                    await user.send({ embeds: [embed] }).catch(() => {});
+                    await dbRun('UPDATE users SET lastReminded = 1 WHERE userId = ?', [u.userId]);
+                    console.log(`[REMINDER] Sent to ${u.userId}`);
+                }
+            } catch (e) {
+                // Mark as reminded even if DM fails to prevent infinite retries
+                await dbRun('UPDATE users SET lastReminded = 1 WHERE userId = ?', [u.userId]);
             }
-        } catch (e) {
-            // User might have DMs off or left all shared servers
-            await dbRun('UPDATE users SET lastReminded = ? WHERE userId = ?', [now, row.userId]);
         }
+    } catch (err) {
+        console.error("Reminder loop error:", err);
     }
 }, 60000); // Check every minute
-
-client.login(DISCORD_TOKEN);
-
-// Global Error Handling to prevent crashes
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-process.on('uncaughtException', (err) => {
-    console.error('Uncaught Exception:', err);
-});
