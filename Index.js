@@ -87,7 +87,7 @@ db.serialize(() => {
     db.run('PRAGMA journal_mode = WAL;');
     db.run('PRAGMA synchronous = NORMAL;');
 
-    db.run('CREATE TABLE IF NOT EXISTS users (userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, lastDaily INTEGER DEFAULT 0, streak INTEGER DEFAULT 0, lastVote INTEGER DEFAULT 0, voteReminder INTEGER DEFAULT 1, lastReminded INTEGER DEFAULT 0)');
+    db.run('CREATE TABLE IF NOT EXISTS users (userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, lastDaily INTEGER DEFAULT 0, streak INTEGER DEFAULT 0)');
     db.run('CREATE TABLE IF NOT EXISTS user_quiz (userId TEXT PRIMARY KEY, quizId INTEGER NOT NULL, askedAt INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS quiz_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS quiz_history (userId TEXT PRIMARY KEY, askedIds TEXT NOT NULL)');
@@ -100,7 +100,7 @@ db.serialize(() => {
 
     // Migration: Ensure all columns exist in all tables
     const migrations = [
-        { table: 'users', columns: ['streak', 'lastDaily', 'lastVote', 'voteReminder', 'lastReminded'] }
+        { table: 'users', columns: ['streak', 'lastDaily'] }
     ];
 
     migrations.forEach(m => {
@@ -154,35 +154,13 @@ const dbGet = (sql, params = []) => new Promise((res, rej) => db.get(sql, params
 
 const CHALLENGES = new Map();
 
-const VOTE_URL = 'https://top.gg/bot/1454968008719073492/vote';
-
 const getUserData = async (userId) => {
-    let r = await dbGet('SELECT coins, lastDaily, streak, lastVote, voteReminder, lastReminded FROM users WHERE userId = ?', [userId]);
+    let r = await dbGet('SELECT coins, lastDaily, streak FROM users WHERE userId = ?', [userId]);
     if (!r) {
-        await dbRun('INSERT OR IGNORE INTO users (userId, coins, lastDaily, streak, lastVote, voteReminder, lastReminded) VALUES (?,0,0,0,0,1,0)', [userId]);
-        return { coins: 0, lastDaily: 0, streak: 0, lastVote: 0, voteReminder: 1, lastReminded: 0 };
+        await dbRun('INSERT OR IGNORE INTO users (userId, coins, lastDaily, streak) VALUES (?,0,0,0)', [userId]);
+        return { coins: 0, lastDaily: 0, streak: 0 };
     }
     return r;
-};
-
-const hasVoted = (userData) => {
-    if (!userData || !userData.lastVote) return false;
-    const twelveHours = 12 * 60 * 60 * 1000;
-    return (Date.now() - userData.lastVote) < twelveHours;
-};
-
-const setVoteReminder = (userId, enabled) => {
-    return dbRun('UPDATE users SET voteReminder = ? WHERE userId = ?', [enabled ? 1 : 0, userId]);
-};
-
-const addVoteFooter = (embed, userData) => {
-    const voted = hasVoted(userData);
-    if (voted) {
-        embed.setFooter({ text: "✅ You've already voted! Come back in 12h to vote again for 100 coins." });
-    } else {
-        embed.setFooter({ text: "💡 Tip: Use /vote to get 100 coins immediately!" });
-    }
-    return embed;
 };
 
 const addUserCoins = async (userId, amount, guildId = null) => {
@@ -195,7 +173,6 @@ const addUserCoins = async (userId, amount, guildId = null) => {
         await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
         await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [amount, guildId, userId]);
     }
-    return amount;
 };
 
 const getServerUserData = async (guildId, userId) => {
@@ -1685,24 +1662,7 @@ client.once(Events.ClientReady, async () => {
                     }
                 ]
             },
-            { name: 'vote', description: 'Vote for the bot on Top.gg to get 100 coins immediately!' },
-            { 
-                name: 'remind', 
-                description: 'Toggle vote reminders (pings you 12h after voting)',
-                options: [
-                    {
-                        name: 'status',
-                        description: 'Turn reminders on or off',
-                        type: ApplicationCommandOptionType.String,
-                        required: true,
-                        choices: [
-                            { name: 'On', value: 'on' },
-                            { name: 'Off', value: 'off' }
-                        ]
-                    }
-                ]
-            },
-            { name: 'checkvote', description: 'Debug: Check your current voting status' },
+            { name: 'vote', description: 'Support the bot by voting on top.gg' },
             { name: 'help', description: 'The ultimate guide to dominating the server' }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
@@ -1724,7 +1684,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
-                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/challenge <user> <bet> <type>` - 1v1 battle for a pot of coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your person guess\n`/ration` - View your accuracy and statistics' 
+                    value: '`/quiz <type>` - Start a multiple-choice quiz (30s cooldown)\n`/challenge <user> <bet> <type>` - 1v1 battle for a pot of coins\n`/guesstheplayer <type>` - Identify the mystery pro from hints\n`/guess <name>` - Submit your person guess\n`/ration` - View your accuracy and statistics\n`/vote` - Support the bot by voting on top.gg' 
                 },
                 { 
                     name: '🏆 Shop & Leaderboard', 
@@ -1850,13 +1810,14 @@ client.on(Events.InteractionCreate, async interaction => {
                     const embed = new EmbedBuilder()
                         .setTitle("⚡ QUIZ RUSH CONTINUES!")
                         .setDescription(`**Question ${session.currentIndex + 1}/5**\n\n${nextQ.question}\n\n⏱️ Time Left: **${timeLeft}s**\n💰 Potential Win: **${session.bet * 2} coins**`)
-                        .setColor(0xFFA500);
+                        .setColor(0xFFA500)
+                        .setFooter({ text: "Keep going! Speed is everything!" });
 
                     const row = new ActionRowBuilder().addComponents(
                         choices.map(c => new ButtonBuilder().setCustomId(`rush_choice:${c}`).setLabel(c).setStyle(ButtonStyle.Primary))
                     );
 
-                    await interaction.editReply({ embeds: [addVoteFooter(embed, await getUserData(user.id))], components: [row] });
+                    await interaction.editReply({ embeds: [embed], components: [row] });
                 } else {
                     // Game Ended
                     RUSH_SESSIONS.delete(user.id);
@@ -1875,7 +1836,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setColor(win ? 0x2ECC71 : 0xE74C3C)
                         .setTimestamp();
 
-                    await interaction.editReply({ embeds: [addVoteFooter(resultEmbed, await getUserData(user.id))], components: [] });
+                    await interaction.editReply({ embeds: [resultEmbed], components: [] });
                 }
                 return;
             }
@@ -2005,7 +1966,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setDescription(`**${choice}** is correct!`)
                         .addFields({ name: '💰 Reward Earned', value: `\`${q.reward}\` coins`, inline: true })
                         .setColor(0x2ECC71);
-                    await interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [] });
+                    await interaction.editReply({ embeds: [embed], components: [] });
                 } else {
                     await incQuizStat(user.id, 'wrong');
                     const embed = new EmbedBuilder()
@@ -2013,7 +1974,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setTitle("Terrible Attempt")
                         .setDescription(`That wasn't quite right. The correct answer was: **${q.answer}**`)
                         .setColor(0xE74C3C);
-                    await interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [] });
+                    await interaction.editReply({ embeds: [embed], components: [] });
                 }
                 return;
             }
@@ -2239,85 +2200,14 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isChatInputCommand()) {
         const { commandName, options } = interaction;
 
-        // 1. Handle /vote, /remind, and /checkvote FIRST (High Priority)
-        if (commandName === 'vote' || commandName === 'remind' || commandName === 'checkvote') {
-            const userData = await getUserData(user.id);
-
-            if (commandName === 'vote') {
-                const twelveHours = 12 * 60 * 60 * 1000;
-                const now = Date.now();
-                const timePassed = now - (userData.lastVote || 0);
-
-                if (timePassed < twelveHours) {
-                    const remaining = twelveHours - timePassed;
-                    const hours = Math.floor(remaining / (60 * 60 * 1000));
-                    const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-
-                    const embed = new EmbedBuilder()
-                        .setTitle("✅ Already Voted!")
-                        .setDescription(`You've already claimed your reward for this 12-hour window.\n\nYou can vote again in **${hours}h ${minutes}m** to get another **100 coins**!`)
-                        .setColor(0x00FF00)
-                        .setTimestamp();
-                    
-                    return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] }).catch(() => {});
-                }
-
-                const embed = new EmbedBuilder()
-                    .setTitle("🗳️ Vote for Quiz Bot")
-                    .setDescription(`Support us by voting on Top.gg and receive **100 Coins** immediately!\n\n[**Click here to vote!**](${VOTE_URL})`)
-                    .setColor(0x00FF00)
-                    .setTimestamp();
-                
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setLabel('Vote Here')
-                        .setURL(VOTE_URL)
-                        .setStyle(ButtonStyle.Link)
-                );
-
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [row] }).catch(() => {});
-            }
-
-            if (commandName === 'remind') {
-                const status = options.getString('status');
-                const enabled = status === 'on';
-                await setVoteReminder(user.id, enabled);
-                
-                return interaction.editReply({ 
-                    content: `✅ Vote reminders have been turned **${enabled ? 'ON' : 'OFF'}**.` 
-                }).catch(() => {});
-            }
-
-            if (commandName === 'checkvote') {
-                const voted = hasVoted(userData);
-                const lastVoteTime = userData.lastVote ? new Date(userData.lastVote).toLocaleString() : 'Never';
-                const timeRemaining = voted ? Math.ceil((12 * 60 * 60 * 1000 - (Date.now() - userData.lastVote)) / 60000) : 0;
-
-                const embed = new EmbedBuilder()
-                    .setTitle("🔍 Voting Status Debug")
-                    .addFields(
-                        { name: "User ID", value: user.id, inline: true },
-                        { name: "Vote Active", value: voted ? "✅ YES" : "❌ NO", inline: true },
-                        { name: "Last Vote Found", value: lastVoteTime, inline: false },
-                        { name: "Minutes Until Next Reward", value: voted ? `${timeRemaining}m` : "READY!", inline: true }
-                    )
-                    .setColor(voted ? 0x00FF00 : 0xFF0000)
-                    .setTimestamp();
-
-                return interaction.editReply({ embeds: [embed] }).catch(() => {});
-            }
-        }
-
-        const userData = await getUserData(user.id);
-
-        if (commandName === 'help') {
+                if (commandName === 'help') {
                 const embed = new EmbedBuilder()
                     .setTitle("🤖 Ultimate Guide to @Quiz Bot")
                     .setDescription("Master standard chess terminology, dominate sports trivia, and climb the global leaderboards!")
                     .addFields(
                         { 
                             name: '💎 Economy & Wealth', 
-                            value: "• `/daily`: Claim your daily allowance. (Streak bonus included!)\n• `/gift <user> <amount>`: Transfer global coins to an ally.\n• `/balance [user]`: Check your Global and Server-specific vaults.\n• `/vote`: Get 100 coins for supporting us!\n• `/remind <on/off>`: Toggle vote reminders." 
+                            value: "• `/daily`: Claim your daily allowance. (Streak bonus included!)\n• `/gift <user> <amount>`: Transfer global coins to an ally.\n• `/balance [user]`: Check your Global and Server-specific vaults." 
                         },
                         { 
                             name: '🎮 Tactical Games', 
@@ -2327,6 +2217,10 @@ client.on(Events.InteractionCreate, async interaction => {
                             name: '🏆 Shop & Leaderboard', 
                             value: "• `/shop`: Buy exclusive roles with your hard-earned coins!\n• `/leaderboard`: View the elite players by Wealth or Intelligence." 
                         },
+                        {
+                            name: '🌟 Support & Community',
+                            value: "• `/vote`: Support the bot by voting on top.gg and help us grow!"
+                        },
                         { 
                             name: '🛠️ Command & Control (Admins)', 
                             value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/shop-delete-all`: Nuke the entire server shop.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only).\n• `/admin-repair`: Force a database integrity check (Owner Only)." 
@@ -2335,7 +2229,17 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setColor(0x3498DB)
                     .setThumbnail(client.user.displayAvatarURL())
                     .setTimestamp();
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] });
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            if (commandName === 'vote') {
+                const embed = new EmbedBuilder()
+                    .setTitle("🗳️ Vote for @Quiz Bot")
+                    .setDescription("Support the bot by voting on top.gg! Your vote helps us grow and add new features.\n\n[Vote Here](https://top.gg/bot/1454968008719073492/vote)")
+                    .setColor(0x2ECC71)
+                    .setThumbnail('https://cdn-icons-png.flaticon.com/512/927/927250.png')
+                    .setTimestamp();
+                return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'shop-delete-all') {
@@ -2387,13 +2291,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 const embed = new EmbedBuilder()
                     .setTitle("⚡ QUIZ RUSH STARTED!")
                     .setDescription(`**Question 1/5**\n\n${q.question}\n\n⏱️ Time Left: **30s**\n💰 Potential Win: **${bet * 2} coins**`)
-                    .setColor(0xFFA500);
+                    .setColor(0xFFA500)
+                    .setFooter({ text: "Hurry! You have 30 seconds to finish all 5!" });
 
                 const row = new ActionRowBuilder().addComponents(
                     choices.map(c => new ButtonBuilder().setCustomId(`rush_choice:${c}`).setLabel(c).setStyle(ButtonStyle.Primary))
                 );
 
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [row] });
+                return interaction.editReply({ embeds: [embed], components: [row] });
             }
                 if (commandName === 'quiz') {
                 const type = options.getString('type') || 'chess'; // Default to chess if not provided
@@ -2450,6 +2355,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setDescription(`**Question:**\n${q.question}\n\n⏱️ **Time Limit:** \`60 seconds\`\n📝 **Choose the correct answer below!**`)
                     .setColor(0x2ECC71)
                     .addFields({ name: '💰 Potential Reward', value: `\`${q.reward}\` coins`, inline: true })
+                    .setFooter({ text: `Good luck, ${user.username}!` })
                     .setTimestamp();
 
                 const buttons = new ActionRowBuilder().addComponents(
@@ -2461,7 +2367,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     )
                 );
 
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [buttons] });
+                return interaction.editReply({ embeds: [embed], components: [buttons] });
             }
 
             if (commandName === 'guesstheplayer') {
@@ -2496,7 +2402,8 @@ client.on(Events.InteractionCreate, async interaction => {
                             .addFields(
                                 { name: '💰 Cost', value: `Next hint: \`${hintCost} coins\``, inline: true },
                                 { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
-                            );
+                            )
+                            .setFooter({ text: "Use /guess to submit your answer" });
                         
                         const label = idx >= entry.hints.length ? 'All Hints Gathered' : `Next Hint (${hintCost} Coins)`;
                         const rowComp = new ActionRowBuilder().addComponents(
@@ -2506,7 +2413,7 @@ client.on(Events.InteractionCreate, async interaction => {
                                 .setStyle(idx >= entry.hints.length ? ButtonStyle.Secondary : ButtonStyle.Primary)
                                 .setDisabled(idx >= entry.hints.length)
                         );
-                        return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [rowComp] });
+                        return interaction.editReply({ embeds: [embed], components: [rowComp] });
                     }
                 }
                 
@@ -2528,12 +2435,13 @@ client.on(Events.InteractionCreate, async interaction => {
                     .addFields(
                         { name: '💰 Cost', value: 'Next intel: `5 coins`', inline: true },
                         { name: '🪙 Balance', value: `\`${data.coins}\` coins`, inline: true }
-                    );
+                    )
+                    .setFooter({ text: "Use /guess to answer • Intel costs 5 coins" });
 
                 const rowBtn = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('guess_next').setLabel('Next Intel (5 Coins)').setStyle(ButtonStyle.Primary)
                 );
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [rowBtn] });
+                return interaction.editReply({ embeds: [embed], components: [rowBtn] });
             }
 
             if (commandName === 'daily') {
@@ -2562,15 +2470,13 @@ client.on(Events.InteractionCreate, async interaction => {
                 const streakBonus = Math.min((newStreak - 1) * 5, 50); // Max 50 bonus
                 const totalReward = baseReward + streakBonus;
 
-                // Use addUserCoins to grant the reward
-                const finalReward = await addUserCoins(user.id, totalReward, guild.id);
-                
-                // Update lastDaily and streak
-                await dbRun('UPDATE users SET lastDaily = ?, streak = ? WHERE userId = ?', [now, newStreak, user.id]);
+                await dbRun('UPDATE users SET coins = coins + ?, lastDaily = ?, streak = ? WHERE userId = ?', [totalReward, now, newStreak, user.id]);
+                await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guild.id, user.id]);
+                await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [totalReward, guild.id, user.id]);
                 
                 const embed = new EmbedBuilder()
                     .setTitle("💰 Daily Stipend Claimed")
-                    .setDescription(`You received **${finalReward} coins**!`)
+                    .setDescription(`You received **${totalReward} coins**!`)
                     .addFields(
                         { name: "🔥 Streak", value: `${newStreak} days`, inline: true },
                         { name: "🎁 Bonus", value: `${streakBonus} coins`, inline: true }
@@ -2578,7 +2484,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/1162/1162951.png')
                     .setColor("#FFD700");
 
-                return interaction.editReply({ embeds: [addVoteFooter(embed, data)] });
+                return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'gift') {
@@ -2647,8 +2553,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     )
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/272/272525.png')
                     .setColor(0xF1C40F)
+                    .setFooter({ text: `Requested by ${user.tag}`, iconURL: user.displayAvatarURL({ dynamic: true }) })
                     .setTimestamp();
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] });
+                return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'leaderboard') {
@@ -2683,8 +2590,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setDescription(`The top 10 people currently dominating the boards.\n\n${txt}`)
                     .setThumbnail(scope === 'server' && category === 'wealth' ? guild.iconURL({ dynamic: true }) : 'https://cdn-icons-png.flaticon.com/512/1021/1021204.png')
                     .setColor(0xFFD700)
+                    .setFooter({ text: `Category: ${category.charAt(0).toUpperCase() + category.slice(1)} • Scope: ${scope.charAt(0).toUpperCase() + scope.slice(1)}` })
                     .setTimestamp();
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] });
+                return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'guess') {
@@ -2710,8 +2618,9 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setDescription(`Insane brain power! The person was indeed **${active.playerName}**.`)
                         .addFields({ name: '💰 Reward Bounty', value: '`10` coins', inline: true })
                         .setColor(0x2ECC71)
-                        .setThumbnail('https://cdn-icons-png.flaticon.com/512/190/190411.png');
-                    return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [] });
+                        .setThumbnail('https://cdn-icons-png.flaticon.com/512/190/190411.png')
+                        .setFooter({ text: "Your brain is massive." });
+                    return interaction.editReply({ embeds: [embed], components: [] });
                 }
                 
                 const embed = new EmbedBuilder()
@@ -3099,117 +3008,3 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 client.login(DISCORD_TOKEN);
-
-// ---------------------------
-// Express Webhook Server
-// ---------------------------
-const express = require('express');
-const app = express();
-app.use(express.json());
-
-// Load Webhook Auth Token
-let TOPGG_WEBHOOK_AUTH;
-try {
-    TOPGG_WEBHOOK_AUTH = fs.readFileSync(path.join(__dirname, 'topgg_auth.txt'), 'utf8').trim();
-    console.log("✅ Webhook security enabled (topgg_auth.txt loaded).");
-} catch {
-    console.warn("⚠️ topgg_auth.txt missing. Webhook security disabled.");
-}
-
-app.post('/webhook', async (req, res) => {
-    const auth = req.headers.authorization;
-    
-    // Detailed logging for debugging
-    console.log(`[WEBHOOK] Request received. Auth Header: ${auth ? 'Present' : 'MISSING'}`);
-    
-    if (TOPGG_WEBHOOK_AUTH && auth !== TOPGG_WEBHOOK_AUTH) {
-        console.warn(`[WEBHOOK] Unauthorized access attempt! Expected: ${TOPGG_WEBHOOK_AUTH}, Got: ${auth}`);
-        return res.status(401).send({ error: 'Unauthorized' });
-    }
-
-    const { user, type } = req.body;
-    console.log(`[WEBHOOK] Body: user=${user}, type=${type}`);
-
-    if (type === 'test') {
-        console.log(`[WEBHOOK] ✅ Test vote received for user ${user}`);
-        return res.status(200).send({ ok: true });
-    }
-
-    if (!user) {
-        console.error('[WEBHOOK] ❌ No user ID in request body');
-        return res.status(400).send({ error: 'No user ID' });
-    }
-
-    console.log(`[WEBHOOK] 🗳️ User ${user} voted on Top.gg! Updating database...`);
-    try {
-        // Update vote timestamp
-        await dbRun('UPDATE users SET lastVote = ?, lastReminded = 0 WHERE userId = ?', [Date.now(), user]);
-        
-        // GRANT 100 COINS IMMEDIATELY
-        await addUserCoins(user, 100);
-        
-        console.log(`[WEBHOOK] ✅ Database updated and 100 coins granted for user ${user}`);
-    } catch (err) {
-        console.error(`[WEBHOOK] ❌ Database update failed: ${err.message}`);
-    }
-    
-    // Send a DM to the user thanking them
-    try {
-        const discordUser = await client.users.fetch(user);
-        if (discordUser) {
-            const embed = new EmbedBuilder()
-                .setTitle("✨ Thanks for Voting!")
-                .setDescription("You just received **100 Coins**! 💰\n\nSupport like yours keeps the bot running. You can vote again in 12 hours for more rewards!")
-                .setColor(0x00FF00)
-                .setTimestamp();
-            await discordUser.send({ embeds: [embed] }).catch(() => {});
-            console.log(`[WEBHOOK] 📩 DM sent to user ${user}`);
-        }
-    } catch (e) {
-        console.warn(`[WEBHOOK] ⚠️ Could not send DM to user ${user}: ${e.message}`);
-    }
-
-    res.status(200).send({ ok: true });
-});
-
-app.listen(3000, () => {
-    console.log("🚀 Webhook server listening on port 3000");
-});
-
-// ---------------------------
-// Background Reminder Task
-// ---------------------------
-setInterval(async () => {
-    try {
-        const now = Date.now();
-        const twelveHours = 12 * 60 * 60 * 1000;
-        
-        // Find users who voted > 12h ago, have reminders ON, and haven't been reminded yet
-        const usersToRemind = await dbAll(
-            'SELECT userId FROM users WHERE voteReminder = 1 AND lastReminded = 0 AND lastVote > 0 AND ? - lastVote >= ?',
-            [now, twelveHours]
-        );
-
-        for (const u of usersToRemind) {
-            try {
-                const user = await client.users.fetch(u.userId);
-                if (user) {
-                    const embed = new EmbedBuilder()
-                        .setTitle("🔔 Vote Reminder")
-                        .setDescription(`You can now vote again on Top.gg to get another **100 coins**!\n\n[**Vote here**](${VOTE_URL})`)
-                        .setColor(0xFFA500)
-                        .setTimestamp();
-                    
-                    await user.send({ embeds: [embed] }).catch(() => {});
-                    await dbRun('UPDATE users SET lastReminded = 1 WHERE userId = ?', [u.userId]);
-                    console.log(`[REMINDER] Sent to ${u.userId}`);
-                }
-            } catch (e) {
-                // Mark as reminded even if DM fails to prevent infinite retries
-                await dbRun('UPDATE users SET lastReminded = 1 WHERE userId = ?', [u.userId]);
-            }
-        }
-    } catch (err) {
-        console.error("Reminder loop error:", err);
-    }
-}, 60000); // Check every minute
