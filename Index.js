@@ -1809,20 +1809,29 @@ client.on(Events.InteractionCreate, async interaction => {
     // 3. IMMEDIATE DEFERRAL
     // This is the most critical part. We must tell Discord we received the interaction 
     // before doing ANY database work or logic.
+    if (interaction.deferred || interaction.replied) return;
+
     try {
         if (interaction.isChatInputCommand()) {
             await interaction.deferReply().catch(err => {
-                throw new Error(`Deferral Failed: ${err.message} (Code: ${err.code})`);
+                if (err.code === 10062) {
+                    console.error("⚠️ [DIAGNOSTIC] Interaction 10062: This usually means the bot took too long to respond OR two instances of the bot are running with the same token.");
+                }
+                throw err;
             });
         } else if (interaction.isButton()) {
             await interaction.deferUpdate().catch(err => {
-                throw new Error(`Button DeferUpdate Failed: ${err.message} (Code: ${err.code})`);
+                if (err.code === 10062) {
+                    console.error("⚠️ [DIAGNOSTIC] Button 10062: Interaction already handled or expired.");
+                }
+                throw err;
             });
         }
     } catch (e) {
-        // If deferral fails, we cannot respond to this interaction.
-        // This usually happens if the bot is running twice or network is extremely laggy.
-        console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] ${e.message}`);
+        // Only log if it's not a common 10062 (which we diagnostic-logged above)
+        if (e.code !== 10062) {
+            console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] Deferral Error: ${e.message}`);
+        }
         return; 
     }
 
@@ -3158,3 +3167,12 @@ setInterval(async () => {
 }, 60000); // Check every minute
 
 client.login(DISCORD_TOKEN);
+
+// Global Error Handling to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+});
