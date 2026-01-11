@@ -2273,6 +2273,24 @@ client.on(Events.InteractionCreate, async interaction => {
         const userData = await getUserData(user.id);
 
         if (commandName === 'vote') {
+            const twelveHours = 12 * 60 * 60 * 1000;
+            const now = Date.now();
+            const timePassed = now - (userData.lastVote || 0);
+
+            if (timePassed < twelveHours) {
+                const remaining = twelveHours - timePassed;
+                const hours = Math.floor(remaining / (60 * 60 * 1000));
+                const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+
+                const embed = new EmbedBuilder()
+                    .setTitle("✅ Already Voted!")
+                    .setDescription(`You have an active **20% Coin Boost**!\n\nYou can vote again in **${hours}h ${minutes}m** to renew your boost.`)
+                    .setColor(0x00FF00)
+                    .setTimestamp();
+                
+                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] });
+            }
+
             const embed = new EmbedBuilder()
                 .setTitle("🗳️ Vote for Quiz Bot")
                 .setDescription(`Support us by voting on Top.gg and receive a **20% Coin Boost** for 12 hours!\n\n[**Click here to vote!**](${VOTE_URL})`)
