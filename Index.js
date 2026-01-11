@@ -14,15 +14,29 @@ const bodyParser = require('body-parser');
 let DISCORD_TOKEN; 
 let TOPGG_WEBHOOK_AUTH;
 try {
-    DISCORD_TOKEN = fs.readFileSync(path.join(__dirname, 'token.txt'), 'utf8').trim();
+    const tokenPath = path.join(__dirname, 'token.txt');
+    if (!fs.existsSync(tokenPath)) {
+        console.error(`CRITICAL: token.txt is missing at ${tokenPath}`);
+        process.exit(1);
+    }
+    DISCORD_TOKEN = fs.readFileSync(tokenPath, 'utf8').trim();
+    
     try {
-        TOPGG_WEBHOOK_AUTH = fs.readFileSync(path.join(__dirname, 'topgg_auth.txt'), 'utf8').trim();
-    } catch {
-        console.log("⚠️ topgg_auth.txt missing. Webhook security disabled.");
+        const authPath = path.join(__dirname, 'topgg_auth.txt');
+        if (fs.existsSync(authPath)) {
+            TOPGG_WEBHOOK_AUTH = fs.readFileSync(authPath, 'utf8').trim();
+            console.log("✅ Webhook security enabled (topgg_auth.txt loaded).");
+        } else {
+            console.log("⚠️ topgg_auth.txt missing. Webhook security disabled.");
+            console.log(`👉 To enable security, create a file at: ${authPath} with a secret password.`);
+            TOPGG_WEBHOOK_AUTH = null;
+        }
+    } catch (err) {
+        console.log(`⚠️ Error reading topgg_auth.txt: ${err.message}`);
         TOPGG_WEBHOOK_AUTH = null;
     }
-} catch {
-    console.error("CRITICAL: token.txt is missing!");
+} catch (err) {
+    console.error(`CRITICAL: Failed to load token: ${err.message}`);
     process.exit(1);
 }
 
@@ -2271,54 +2285,58 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isChatInputCommand()) {
         const { commandName, options } = interaction;
         
-        // Handle /vote separately and quickly if possible
-        if (commandName === 'vote') {
+        // 1. Handle /vote and /remind FIRST (High Priority)
+        if (commandName === 'vote' || commandName === 'remind') {
             const userData = await getUserData(user.id);
-            const twelveHours = 12 * 60 * 60 * 1000;
-            const now = Date.now();
-            const timePassed = now - (userData.lastVote || 0);
 
-            if (timePassed < twelveHours) {
-                const remaining = twelveHours - timePassed;
-                const hours = Math.floor(remaining / (60 * 60 * 1000));
-                const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+            if (commandName === 'vote') {
+                const twelveHours = 12 * 60 * 60 * 1000;
+                const now = Date.now();
+                const timePassed = now - (userData.lastVote || 0);
+
+                if (timePassed < twelveHours) {
+                    const remaining = twelveHours - timePassed;
+                    const hours = Math.floor(remaining / (60 * 60 * 1000));
+                    const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+
+                    const embed = new EmbedBuilder()
+                        .setTitle("✅ Already Voted!")
+                        .setDescription(`You have an active **20% Coin Boost**!\n\nYou can vote again in **${hours}h ${minutes}m** to renew your boost.`)
+                        .setColor(0x00FF00)
+                        .setTimestamp();
+                    
+                    return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] }).catch(() => {});
+                }
 
                 const embed = new EmbedBuilder()
-                    .setTitle("✅ Already Voted!")
-                    .setDescription(`You have an active **20% Coin Boost**!\n\nYou can vote again in **${hours}h ${minutes}m** to renew your boost.`)
+                    .setTitle("🗳️ Vote for Quiz Bot")
+                    .setDescription(`Support us by voting on Top.gg and receive a **20% Coin Boost** for 12 hours!\n\n[**Click here to vote!**](${VOTE_URL})`)
                     .setColor(0x00FF00)
                     .setTimestamp();
                 
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] }).catch(() => {});
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setLabel('Vote Here')
+                        .setURL(VOTE_URL)
+                        .setStyle(ButtonStyle.Link)
+                );
+
+                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [row] }).catch(() => {});
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle("🗳️ Vote for Quiz Bot")
-                .setDescription(`Support us by voting on Top.gg and receive a **20% Coin Boost** for 12 hours!\n\n[**Click here to vote!**](${VOTE_URL})`)
-                .setColor(0x00FF00)
-                .setTimestamp();
-            
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setLabel('Vote Here')
-                    .setURL(VOTE_URL)
-                    .setStyle(ButtonStyle.Link)
-            );
-
-            return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [row] }).catch(() => {});
+            if (commandName === 'remind') {
+                const status = options.getString('status');
+                const enabled = status === 'on';
+                await setVoteReminder(user.id, enabled);
+                
+                return interaction.editReply({ 
+                    content: `✅ Vote reminders have been turned **${enabled ? 'ON' : 'OFF'}**.` 
+                }).catch(() => {});
+            }
         }
 
+        // 2. Handle all other commands
         const userData = await getUserData(user.id);
-
-        if (commandName === 'remind') {
-            const status = options.getString('status');
-            const enabled = status === 'on';
-            await setVoteReminder(user.id, enabled);
-            
-            return interaction.editReply({ 
-                content: `✅ Vote reminders have been turned **${enabled ? 'ON' : 'OFF'}**.` 
-            });
-        }
 
         if (commandName === 'help') {
                 const embed = new EmbedBuilder()
@@ -3116,20 +3134,35 @@ app.use(bodyParser.json());
 
 app.post('/webhook', async (req, res) => {
     const auth = req.headers.authorization;
+    
+    // Detailed logging for debugging
+    console.log(`[WEBHOOK] Request received. Auth Header: ${auth ? 'Present' : 'MISSING'}`);
+    
     if (TOPGG_WEBHOOK_AUTH && auth !== TOPGG_WEBHOOK_AUTH) {
+        console.warn(`[WEBHOOK] Unauthorized access attempt! Expected: ${TOPGG_WEBHOOK_AUTH}, Got: ${auth}`);
         return res.status(401).send({ error: 'Unauthorized' });
     }
 
     const { user, type } = req.body;
+    console.log(`[WEBHOOK] Body: user=${user}, type=${type}`);
+
     if (type === 'test') {
-        console.log(`Test vote received for user ${user}`);
+        console.log(`[WEBHOOK] ✅ Test vote received for user ${user}`);
         return res.status(200).send({ ok: true });
     }
 
-    if (!user) return res.status(400).send({ error: 'No user ID' });
+    if (!user) {
+        console.error('[WEBHOOK] ❌ No user ID in request body');
+        return res.status(400).send({ error: 'No user ID' });
+    }
 
-    console.log(`User ${user} voted on Top.gg!`);
-    await dbRun('UPDATE users SET lastVote = ?, lastReminded = 0 WHERE userId = ?', [Date.now(), user]);
+    console.log(`[WEBHOOK] 🗳️ User ${user} voted on Top.gg! Updating database...`);
+    try {
+        await dbRun('UPDATE users SET lastVote = ?, lastReminded = 0 WHERE userId = ?', [Date.now(), user]);
+        console.log(`[WEBHOOK] ✅ Database updated for user ${user}`);
+    } catch (err) {
+        console.error(`[WEBHOOK] ❌ Database update failed: ${err.message}`);
+    }
     
     // Optional: Send a DM to the user thanking them
     try {
@@ -3141,8 +3174,11 @@ app.post('/webhook', async (req, res) => {
                 .setColor(0x00FF00)
                 .setTimestamp();
             await discordUser.send({ embeds: [embed] }).catch(() => {});
+            console.log(`[WEBHOOK] 📩 DM sent to user ${user}`);
         }
-    } catch (e) {}
+    } catch (e) {
+        console.warn(`[WEBHOOK] ⚠️ Could not send DM to user ${user}: ${e.message}`);
+    }
 
     res.status(200).send({ ok: true });
 });
