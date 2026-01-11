@@ -1829,31 +1829,20 @@ client.on(Events.InteractionCreate, async interaction => {
     const { user, guild } = interaction;
 
     // 3. IMMEDIATE DEFERRAL
-    // This is the most critical part. We must tell Discord we received the interaction 
-    // before doing ANY database work or logic.
     if (interaction.deferred || interaction.replied) return;
 
     try {
         if (interaction.isChatInputCommand()) {
-            await interaction.deferReply().catch(err => {
-                if (err.code === 10062) {
-                    console.error("⚠️ [DIAGNOSTIC] Interaction 10062: This usually means the bot took too long to respond OR two instances of the bot are running with the same token.");
-                }
-                throw err;
-            });
+            await interaction.deferReply();
         } else if (interaction.isButton()) {
-            await interaction.deferUpdate().catch(err => {
-                if (err.code === 10062) {
-                    console.error("⚠️ [DIAGNOSTIC] Button 10062: Interaction already handled or expired.");
-                }
-                throw err;
-            });
+            await interaction.deferUpdate();
         }
     } catch (e) {
-        // Only log if it's not a common 10062 (which we diagnostic-logged above)
-        if (e.code !== 10062) {
-            console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] Deferral Error: ${e.message}`);
+        if (e.code === 10062) {
+            // SILENT FAIL for duplicate instance
+            return;
         }
+        console.error(`❌ Deferral Error: ${e.message}`);
         return; 
     }
 
