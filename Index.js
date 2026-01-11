@@ -212,8 +212,12 @@ const addUserCoins = async (userId, amount, guildId = null) => {
     let finalAmount = amount;
     const userData = await getUserData(userId);
     
-    if (amount > 0 && hasVoted(userData)) {
+    const voted = hasVoted(userData);
+    if (amount > 0 && voted) {
         finalAmount = Math.floor(amount * 1.2);
+        console.log(`[BOOST] User ${userId} got 20% boost! ${amount} -> ${finalAmount}`);
+    } else if (amount > 0) {
+        console.log(`[BOOST] User ${userId} NO boost. Voted: ${voted}, lastVote: ${userData.lastVote}`);
     }
 
     // Always update global coins
@@ -1735,6 +1739,10 @@ client.once(Events.ClientReady, async () => {
                     }
                 ]
             },
+            {
+                name: 'checkvote',
+                description: 'Debug your voting status and boost'
+            },
             { name: 'help', description: 'The ultimate guide to dominating the server' }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
@@ -2332,6 +2340,25 @@ client.on(Events.InteractionCreate, async interaction => {
                 return interaction.editReply({ 
                     content: `✅ Vote reminders have been turned **${enabled ? 'ON' : 'OFF'}**.` 
                 }).catch(() => {});
+            }
+
+            if (commandName === 'checkvote') {
+                const voted = hasVoted(userData);
+                const lastVoteTime = userData.lastVote ? new Date(userData.lastVote).toLocaleString() : 'Never';
+                const timeRemaining = voted ? Math.ceil((12 * 60 * 60 * 1000 - (Date.now() - userData.lastVote)) / 60000) : 0;
+
+                const embed = new EmbedBuilder()
+                    .setTitle("🔍 Voting Status Debug")
+                    .addFields(
+                        { name: "User ID", value: user.id, inline: true },
+                        { name: "Active Boost", value: voted ? "✅ YES (20%)" : "❌ NO", inline: true },
+                        { name: "Last Vote Found", value: lastVoteTime, inline: false },
+                        { name: "Minutes Remaining", value: voted ? `${timeRemaining}m` : "N/A", inline: true }
+                    )
+                    .setColor(voted ? 0x00FF00 : 0xFF0000)
+                    .setTimestamp();
+
+                return interaction.editReply({ embeds: [embed] }).catch(() => {});
             }
         }
 
