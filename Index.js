@@ -1663,6 +1663,7 @@ client.once(Events.ClientReady, async () => {
                 ]
             },
             { name: 'vote', description: 'Support the bot by voting on top.gg' },
+            { name: 'support', description: 'Get the link to our Discord support server' },
             { name: 'help', description: 'The ultimate guide to dominating the server' }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
@@ -1689,6 +1690,10 @@ client.on(Events.MessageCreate, async message => {
                 { 
                     name: '🏆 Shop & Leaderboard', 
                     value: '`/shop` - View roles available in this server\'s shop\n`/leaderboard [scope] [category]` - View top players' 
+                },
+                {
+                    name: '🌟 Support',
+                    value: '[Join Support Server](https://discord.gg/b7BAQH3gf2) • [Vote for Bot](https://top.gg/bot/1454968008719073492/vote)'
                 },
                 { 
                     name: '🛠️ Admin Commands', 
@@ -2219,7 +2224,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         {
                             name: '🌟 Support & Community',
-                            value: "• `/vote`: Support the bot by voting on top.gg and help us grow!"
+                            value: "• `/vote`: Support the bot by voting on top.gg!\n• `/support`: Join our community for help and updates!"
                         },
                         { 
                             name: '🛠️ Command & Control (Admins)', 
@@ -2233,14 +2238,24 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             if (commandName === 'vote') {
-                const embed = new EmbedBuilder()
-                    .setTitle("🗳️ Vote for @Quiz Bot")
-                    .setDescription("Support the bot by voting on top.gg! Your vote helps us grow and add new features.\n\n[Vote Here](https://top.gg/bot/1454968008719073492/vote)")
-                    .setColor(0x2ECC71)
-                    .setThumbnail('https://cdn-icons-png.flaticon.com/512/927/927250.png')
-                    .setTimestamp();
-                return interaction.editReply({ embeds: [embed] });
-            }
+                 const embed = new EmbedBuilder()
+                     .setTitle("🗳️ Vote for @Quiz Bot")
+                     .setDescription("Support the bot by voting on top.gg! Your vote helps us grow and add new features.\n\n[Vote Here](https://top.gg/bot/1454968008719073492/vote)")
+                     .setColor(0x2ECC71)
+                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/927/927250.png')
+                     .setTimestamp();
+                 return interaction.editReply({ embeds: [embed] });
+             }
+
+             if (commandName === 'support') {
+                 const embed = new EmbedBuilder()
+                     .setTitle("🤝 Support Server")
+                     .setDescription("Need help, want to report a bug, or just want to hang out with the community?\n\n**Join us here:** [Support Server](https://discord.gg/b7BAQH3gf2)")
+                     .setColor(0x3498DB)
+                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/4233/4233830.png')
+                     .setTimestamp();
+                 return interaction.editReply({ embeds: [embed] });
+             }
 
             if (commandName === 'shop-delete-all') {
                 if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
