@@ -20,7 +20,7 @@ try {
 // ---------------------------
 // Client & Database Setup
 // ---------------------------
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
 /**
  * Simple Database Path Resolution
