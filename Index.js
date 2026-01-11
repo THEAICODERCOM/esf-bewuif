@@ -2283,7 +2283,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const { commandName, options } = interaction;
         
         // 1. Handle /vote and /remind FIRST (High Priority)
-        if (commandName === 'vote' || commandName === 'remind') {
+        if (commandName === 'vote' || commandName === 'remind' || commandName === 'checkvote') {
             const userData = await getUserData(user.id);
 
             if (commandName === 'vote') {
