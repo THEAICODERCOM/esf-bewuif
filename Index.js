@@ -2270,9 +2270,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (interaction.isChatInputCommand()) {
         const { commandName, options } = interaction;
-        const userData = await getUserData(user.id);
-
+        
+        // Handle /vote separately and quickly if possible
         if (commandName === 'vote') {
+            const userData = await getUserData(user.id);
             const twelveHours = 12 * 60 * 60 * 1000;
             const now = Date.now();
             const timePassed = now - (userData.lastVote || 0);
@@ -2288,7 +2289,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setColor(0x00FF00)
                     .setTimestamp();
                 
-                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] });
+                return interaction.editReply({ embeds: [addVoteFooter(embed, userData)] }).catch(() => {});
             }
 
             const embed = new EmbedBuilder()
@@ -2304,8 +2305,10 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setStyle(ButtonStyle.Link)
             );
 
-            return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [row] });
+            return interaction.editReply({ embeds: [addVoteFooter(embed, userData)], components: [row] }).catch(() => {});
         }
+
+        const userData = await getUserData(user.id);
 
         if (commandName === 'remind') {
             const status = options.getString('status');
