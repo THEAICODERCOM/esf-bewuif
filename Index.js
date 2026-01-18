@@ -1768,6 +1768,10 @@ client.once(Events.ClientReady, async () => {
                         required: true
                     }
                 ]
+            },
+            {
+                name: 'servers',
+                description: 'Show all servers the bot is in (Owner only)'
             }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
@@ -2649,6 +2653,51 @@ client.on(Events.InteractionCreate, async interaction => {
             });
         }
 
+        if (commandName === 'servers') {
+            if (user.id !== '1324354578338025533') {
+                return interaction.editReply({ content: "❌ This is a restricted owner command." });
+            }
+
+            const guilds = client.guilds.cache;
+            let serverList = "";
+            let count = 0;
+
+            for (const [guildId, guild] of guilds) {
+                count++;
+                let inviteLink = "No permission to create invite";
+                
+                // Try to find a channel to create an invite
+                const channel = guild.channels.cache.find(c => c.isTextBased() && c.permissionsFor(guild.members.me).has('CreateInstantInvite'));
+                
+                if (channel) {
+                    try {
+                        const invite = await channel.createInvite({ maxAge: 0, maxUses: 0 });
+                        inviteLink = invite.url;
+                    } catch (e) {
+                        inviteLink = "Failed to create invite";
+                    }
+                }
+
+                const line = `**${count}. ${guild.name}**\nID: \`${guildId}\` | Members: \`${guild.memberCount}\`\nLink: ${inviteLink}\n\n`;
+                
+                // Discord embed field limit is 1024, total embed 6000. 
+                // We'll use a simple followUp for long lists if needed, but for now let's use an embed.
+                if ((serverList + line).length > 3800) {
+                    serverList += "...and more (limit reached)";
+                    break;
+                }
+                serverList += line;
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🌐 Connected Servers (${guilds.size})`)
+                .setDescription(serverList || "No servers found.")
+                .setColor(0x3498DB)
+                .setTimestamp();
+
+            return interaction.editReply({ embeds: [embed] });
+        }
+
         if (commandName === 'help') {
                 const embed = new EmbedBuilder()
                     .setTitle("🤖 Ultimate Guide to @Quiz Bot")
@@ -3481,4 +3530,5 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 client.login(DISCORD_TOKEN);
+
 
