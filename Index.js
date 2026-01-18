@@ -1648,11 +1648,13 @@ client.once(Events.ClientReady, async () => {
             },
             {
                 name: 'admin-backup',
-                description: 'Generate recovery protocols (Owner only)'
+                description: 'Generate recovery protocols (Owner only)',
+                default_member_permissions: '0'
             },
             {
                 name: 'admin-repair',
-                description: 'Verify database integrity and repair if possible (Owner only)'
+                description: 'Verify database integrity and repair if possible (Owner only)',
+                default_member_permissions: '0'
             },
             { 
                 name: 'quiz', 
@@ -1712,6 +1714,7 @@ client.once(Events.ClientReady, async () => {
             {
                 name: 'events',
                 description: 'Manage global events (Owner only)',
+                default_member_permissions: '0',
                 options: [
                     {
                         name: 'create',
@@ -1760,6 +1763,7 @@ client.once(Events.ClientReady, async () => {
             {
                 name: 'say',
                 description: 'Broadcast a message to all servers (Owner only)',
+                default_member_permissions: '0',
                 options: [
                     {
                         name: 'message',
@@ -1771,7 +1775,8 @@ client.once(Events.ClientReady, async () => {
             },
             {
                 name: 'servers',
-                description: 'Show all servers the bot is in (Owner only)'
+                description: 'Show all servers the bot is in (Owner only)',
+                default_member_permissions: '0'
             }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
@@ -3530,5 +3535,6 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 client.login(DISCORD_TOKEN);
+
 
 
