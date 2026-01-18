@@ -147,10 +147,12 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS bot_analytics_quizzes (questionId TEXT NOT NULL, correct INTEGER NOT NULL, timestamp INTEGER NOT NULL)');
 db.run('CREATE TABLE IF NOT EXISTS bot_analytics_security (type TEXT NOT NULL, timestamp INTEGER NOT NULL)');
 db.run('CREATE TABLE IF NOT EXISTS bot_analytics_hourly (hour INTEGER NOT NULL, count INTEGER DEFAULT 0, PRIMARY KEY (hour))');
+});
 
 let totalResponseTime = 0;
 let commandsProcessed = 0;
 
+db.serialize(() => {
     // Migration: Ensure all columns exist in all tables
     const migrations = [
         { table: 'users', columns: ['streak', 'lastDaily', 'lastActive'] }
