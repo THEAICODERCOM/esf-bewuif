@@ -147,14 +147,13 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS bot_analytics_quizzes (questionId TEXT NOT NULL, correct INTEGER NOT NULL, timestamp INTEGER NOT NULL)');
 db.run('CREATE TABLE IF NOT EXISTS bot_analytics_security (type TEXT NOT NULL, timestamp INTEGER NOT NULL)');
 db.run('CREATE TABLE IF NOT EXISTS bot_analytics_hourly (hour INTEGER NOT NULL, count INTEGER DEFAULT 0, PRIMARY KEY (hour))');
-db.run('ALTER TABLE users ADD COLUMN lastActive INTEGER DEFAULT 0').catch(() => {});
 
 let totalResponseTime = 0;
-let commandsProcessed = 0; // Silent fail if already exists
+let commandsProcessed = 0;
 
     // Migration: Ensure all columns exist in all tables
     const migrations = [
-        { table: 'users', columns: ['streak', 'lastDaily'] }
+        { table: 'users', columns: ['streak', 'lastDaily', 'lastActive'] }
     ];
 
     migrations.forEach(m => {
@@ -2669,10 +2668,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 const ecoStatus = earned24h > spent24h * 1.5 ? "🔴 Inflating" : "🟢 Stable";
 
                 // 5. Quiz Analytics
-                const totalQuizzes = (await dbGet('SELECT COUNT(*) as count FROM bot_analytics_quizzes')).count;
-                const quizStats = await dbGet('SELECT SUM(correct) as correct, COUNT(*) as total FROM bot_analytics_quizzes');
-                const avgAccuracy = quizStats.total > 0 ? ((quizStats.correct / quizStats.total) * 100).toFixed(1) : 0;
-                const topAccuracyData = await dbGet('SELECT MAX(accuracy) as maxAcc FROM (SELECT (CAST(correct AS FLOAT)/total)*100 as accuracy FROM (SELECT userId, SUM(correct) as correct, COUNT(*) as total FROM bot_analytics_quizzes GROUP BY userId))');
+                const lifetimeQuizData = await dbGet('SELECT SUM(correct) as correct, SUM(wrong) as wrong, COUNT(*) as totalUsers FROM quiz_stats');
+                const totalQuizzesLifetime = (lifetimeQuizData.correct || 0) + (lifetimeQuizData.wrong || 0);
+                const avgAccuracyLifetime = totalQuizzesLifetime > 0 ? ((lifetimeQuizData.correct / totalQuizzesLifetime) * 100).toFixed(1) : 0;
+                
+                const topAccuracyData = await dbGet('SELECT MAX(accuracy) as maxAcc FROM (SELECT (CAST(correct AS FLOAT)/(correct + wrong))*100 as accuracy FROM quiz_stats WHERE (correct + wrong) > 0)');
                 const topAccuracy = topAccuracyData?.maxAcc ? topAccuracyData.maxAcc.toFixed(1) : 'N/A';
 
                 // 6. System Status
@@ -2751,8 +2751,8 @@ Status: ${ecoStatus}
 ━━━━━━━━━━━━━━━━━━━━
 
 🧠 **QUIZ INTELLIGENCE**
-Quizzes Played: **${totalQuizzes}**
-Avg Accuracy: \`${avgAccuracy}%\`
+Quizzes Played: **${totalQuizzesLifetime.toLocaleString()}**
+Avg Accuracy: \`${avgAccuracyLifetime}%\`
 Most Failed Topic: \`Logic Puzzles\`
 Top Accuracy (Anon): \`${topAccuracy}%\`
 Cheat Flags: \`0\`
