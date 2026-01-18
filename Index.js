@@ -119,6 +119,19 @@ db.serialize(() => {
         FOREIGN KEY (eventId) REFERENCES global_events(eventId) ON DELETE CASCADE
     )`);
 
+    db.run(`CREATE TABLE IF NOT EXISTS active_boosters (
+        userId TEXT PRIMARY KEY,
+        multiplier REAL DEFAULT 2.0,
+        expiresAt INTEGER NOT NULL
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS temporary_permissions (
+        userId TEXT NOT NULL,
+        permission TEXT NOT NULL,
+        expiresAt INTEGER NOT NULL,
+        PRIMARY KEY (userId, permission)
+    )`);
+
     // Migration: Ensure all columns exist in all tables
     const migrations = [
         { table: 'users', columns: ['streak', 'lastDaily'] }
@@ -185,15 +198,25 @@ const getUserData = async (userId) => {
 };
 
 const addUserCoins = async (userId, amount, guildId = null) => {
+    // Check for active multipliers (e.g. 2x coin booster)
+    let finalAmount = amount;
+    if (amount > 0) {
+        const booster = await dbGet('SELECT multiplier FROM active_boosters WHERE userId = ? AND expiresAt > ?', [userId, Date.now()]);
+        if (booster) {
+            finalAmount = Math.floor(amount * booster.multiplier);
+        }
+    }
+
     // Always update global coins
     await dbRun('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId]);
-    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [amount, userId]);
+    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [finalAmount, userId]);
     
     // If guildId is provided, also update server-specific coins
     if (guildId) {
         await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
-        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [amount, guildId, userId]);
+        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
     }
+    return finalAmount; // Return final amount in case we want to show it in the message
 };
 
 const getServerUserData = async (guildId, userId) => {
@@ -1852,8 +1875,42 @@ async function checkAndAnnounceEvents() {
                 
                 // Reward for winner (1st place)
                 if (i === 0) {
-                    // Automatically reward coins as a baseline
-                    await dbRun('UPDATE users SET coins = coins + 500 WHERE userId = ?', [p.userId]);
+                    let rewardApplied = "";
+                    const type = event.type;
+                    const oneDay = 24 * 60 * 60 * 1000;
+
+                    if (type === 'tournament') {
+                        // 2x coin booster for 1 month
+                        const expires = Date.now() + (30 * oneDay);
+                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
+                        rewardApplied = "2x Coin Booster (30 Days)";
+                    } 
+                    else if (type === 'pvp_showdown') {
+                        // 2x coin booster for 7 days + /addmoney permission
+                        const expires = Date.now() + (7 * oneDay);
+                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
+                        await dbRun('INSERT OR REPLACE INTO temporary_permissions (userId, permission, expiresAt) VALUES (?, "addmoney", ?)', [p.userId, expires]);
+                        rewardApplied = "2x Coin Booster & /addmoney Permission (7 Days)";
+                    }
+                    else if (type === 'rush_marathon') {
+                        // 2x coin booster for 3 days
+                        const expires = Date.now() + (3 * oneDay);
+                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
+                        rewardApplied = "2x Coin Booster (3 Days)";
+                    }
+                    else if (type === 'streak_king') {
+                        // 2x coin booster for 7 days
+                        const expires = Date.now() + (7 * oneDay);
+                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
+                        rewardApplied = "2x Coin Booster (7 Days)";
+                    }
+                    else {
+                        // Default coins for other types
+                        await dbRun('UPDATE users SET coins = coins + 500 WHERE userId = ?', [p.userId]);
+                        rewardApplied = "500 Coins";
+                    }
+
+                    winnersText += `🎁 **Reward:** ${rewardApplied}\n`;
                 }
             }
             embed.addFields({ name: 'Champions', value: winnersText });
@@ -2554,19 +2611,31 @@ client.on(Events.InteractionCreate, async interaction => {
             const guilds = client.guilds.cache;
             for (const [guildId, guild] of guilds) {
                 try {
-                    // Search for "bot-commands", "bot-command", or "commands"
-                    const targetNames = ['bot-commands', 'bot-command', 'commands'];
+                    // Search for broad channel matches
                     const channel = guild.channels.cache.find(c => 
-                        targetNames.includes(c.name.toLowerCase()) && 
-                        c.isTextBased()
+                        c.isTextBased() && (
+                            c.name.toLowerCase().includes('bot-command') || 
+                            c.name.toLowerCase().includes('command') ||
+                            c.name.toLowerCase().includes('bot') ||
+                            c.name.toLowerCase() === 'general'
+                        )
                     );
                     
                     if (channel) {
                         await channel.send(cleanMessage);
                         successCount++;
                     } else {
-                        // Skip server if no matching channel is found
-                        failCount++;
+                        // Final fallback: try to find ANY text channel the bot can send to
+                        const fallbackChannel = guild.channels.cache.find(c => 
+                            c.isTextBased() && 
+                            c.permissionsFor(guild.members.me).has('SendMessages')
+                        );
+                        if (fallbackChannel) {
+                            await fallbackChannel.send(cleanMessage);
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
                     }
                 } catch (err) {
                     console.error(`Failed to send message to guild ${guild.name} (${guildId}):`, err.message);
@@ -3350,11 +3419,18 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             if (commandName === 'addmoney') {
-                if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
-                }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
+
+                // Permission check: Administrator, ManageRoles, OR temporary event permission
+                const hasTempPerm = await dbGet('SELECT 1 FROM temporary_permissions WHERE userId = ? AND permission = "addmoney" AND expiresAt > ?', [user.id, Date.now()]);
+
+                if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && 
+                    !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) &&
+                    !hasTempPerm) {
+                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
+                }
+
                 await addUserCoins(target.id, amount, guild.id);
                 
                 const embed = new EmbedBuilder()
@@ -3405,3 +3481,4 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 client.login(DISCORD_TOKEN);
+
