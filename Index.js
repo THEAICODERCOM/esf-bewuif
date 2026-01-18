@@ -97,6 +97,27 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS guess_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS server_coins (guildId TEXT NOT NULL, userId TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guildId, userId))');
     db.run('CREATE TABLE IF NOT EXISTS server_shop (guildId TEXT NOT NULL, itemName TEXT NOT NULL, roleId TEXT NOT NULL, price INTEGER NOT NULL, PRIMARY KEY (guildId, itemName))');
+    
+    // Global Events Tables
+    db.run(`CREATE TABLE IF NOT EXISTS global_events (
+        eventId INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        startTime INTEGER NOT NULL,
+        endTime INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        rewardData TEXT,
+        announced INTEGER DEFAULT 0,
+        completed INTEGER DEFAULT 0
+    )`);
+    
+    db.run(`CREATE TABLE IF NOT EXISTS event_participants (
+        eventId INTEGER NOT NULL,
+        userId TEXT NOT NULL,
+        score INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (eventId, userId),
+        FOREIGN KEY (eventId) REFERENCES global_events(eventId) ON DELETE CASCADE
+    )`);
 
     // Migration: Ensure all columns exist in all tables
     const migrations = [
@@ -1664,9 +1685,73 @@ client.once(Events.ClientReady, async () => {
             },
             { name: 'vote', description: 'Support the bot by voting on top.gg' },
             { name: 'support', description: 'Get the link to our Discord support server' },
-            { name: 'help', description: 'The ultimate guide to dominating the server' }
+            { name: 'help', description: 'The ultimate guide to dominating the server' },
+            {
+                name: 'events',
+                description: 'Manage global events (Owner only)',
+                options: [
+                    {
+                        name: 'create',
+                        description: 'Create a new global event',
+                        type: ApplicationCommandOptionType.Subcommand,
+                        options: [
+                            { name: 'name', description: 'Event name', type: ApplicationCommandOptionType.String, required: true },
+                            { name: 'description', description: 'Event description', type: ApplicationCommandOptionType.String, required: true },
+                            { name: 'type', description: 'Event type', type: ApplicationCommandOptionType.String, required: true, autocomplete: true },
+                            { name: 'start', description: 'Start date/time (YYYY-MM-DD HH:mm)', type: ApplicationCommandOptionType.String, required: true },
+                            { name: 'end', description: 'End date/time (YYYY-MM-DD HH:mm)', type: ApplicationCommandOptionType.String, required: true },
+                            { name: 'reward', description: 'Reward description', type: ApplicationCommandOptionType.String, required: false }
+                        ]
+                    },
+                    {
+                        name: 'update',
+                        description: 'Update an existing event',
+                        type: ApplicationCommandOptionType.Subcommand,
+                        options: [
+                            { name: 'id', description: 'Event ID', type: ApplicationCommandOptionType.Integer, required: true },
+                            { name: 'name', description: 'New name', type: ApplicationCommandOptionType.String, required: false },
+                            { name: 'description', description: 'New description', type: ApplicationCommandOptionType.String, required: false },
+                            { name: 'reward', description: 'New reward', type: ApplicationCommandOptionType.String, required: false }
+                        ]
+                    },
+                    {
+                        name: 'stats',
+                        description: 'View ongoing event stats and leaderboards',
+                        type: ApplicationCommandOptionType.Subcommand
+                    },
+                    {
+                        name: 'list',
+                        description: 'List all global events',
+                        type: ApplicationCommandOptionType.Subcommand
+                    },
+                    {
+                        name: 'delete',
+                        description: 'Delete a global event',
+                        type: ApplicationCommandOptionType.Subcommand,
+                        options: [
+                            { name: 'id', description: 'Event ID', type: ApplicationCommandOptionType.Integer, required: true }
+                        ]
+                    }
+                ]
+            },
+            {
+                name: 'say',
+                description: 'Broadcast a message to all servers (Owner only)',
+                options: [
+                    {
+                        name: 'message',
+                        description: 'The message to broadcast',
+                        type: ApplicationCommandOptionType.String,
+                        required: true
+                    }
+                ]
+            }
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
+
+        // Start Global Events Checker (every 1 minute)
+        setInterval(checkAndAnnounceEvents, 60000);
+        checkAndAnnounceEvents(); // Initial check on startup
     } catch (error) {
         console.error("Command Registration Error:", error);
     }
@@ -1709,6 +1794,113 @@ client.on(Events.MessageCreate, async message => {
 });
 
 // ---------------------------
+// Event Helper Functions
+// ---------------------------
+async function updateEventScore(userId, eventType, points = 1) {
+    const now = Date.now();
+    const activeEvents = await dbAll(
+        'SELECT eventId FROM global_events WHERE type = ? AND startTime <= ? AND endTime >= ? AND completed = 0',
+        [eventType, now, now]
+    );
+
+    for (const event of activeEvents) {
+        await dbRun(
+            'INSERT INTO event_participants (eventId, userId, score) VALUES (?, ?, ?) ON CONFLICT(eventId, userId) DO UPDATE SET score = score + ?',
+            [event.eventId, userId, points, points]
+        );
+    }
+}
+
+async function checkAndAnnounceEvents() {
+    const now = Date.now();
+    
+    // 1. Announce New Events
+    const toAnnounce = await dbAll('SELECT * FROM global_events WHERE startTime <= ? AND announced = 0 AND completed = 0', [now]);
+    for (const event of toAnnounce) {
+        const embed = new EmbedBuilder()
+            .setTitle(`🎉 NEW GLOBAL EVENT: ${event.name}`)
+            .setDescription(event.description)
+            .addFields(
+                { name: '🏆 Reward', value: event.rewardData || 'Tournament Title & Coins', inline: true },
+                { name: '⏱️ Ends', value: `<t:${Math.floor(event.endTime / 1000)}:R>`, inline: true },
+                { name: '📝 Type', value: event.type.replace('_', ' ').toUpperCase(), inline: true }
+            )
+            .setColor(0xF1C40F)
+            .setTimestamp();
+
+        await broadcastToEventsChannel(embed);
+        await dbRun('UPDATE global_events SET announced = 1 WHERE eventId = ?', [event.eventId]);
+    }
+
+    // 2. Complete Finished Events
+    const toComplete = await dbAll('SELECT * FROM global_events WHERE endTime <= ? AND completed = 0', [now]);
+    for (const event of toComplete) {
+        const participants = await dbAll('SELECT * FROM event_participants WHERE eventId = ? ORDER BY score DESC LIMIT 3', [event.eventId]);
+        
+        const embed = new EmbedBuilder()
+            .setTitle(`🏁 EVENT COMPLETED: ${event.name}`)
+            .setDescription(`The global event has ended! Here are the champions:`)
+            .setColor(0x2ECC71)
+            .setTimestamp();
+
+        if (participants.length > 0) {
+            let winnersText = "";
+            for (let i = 0; i < participants.length; i++) {
+                const p = participants[i];
+                const medal = i === 0 ? "🥇" : (i === 1 ? "🥈" : "🥉");
+                winnersText += `${medal} <@${p.userId}> — Score: **${p.score}**\n`;
+                
+                // Reward for winner (1st place)
+                if (i === 0) {
+                    // Automatically reward coins as a baseline
+                    await dbRun('UPDATE users SET coins = coins + 500 WHERE userId = ?', [p.userId]);
+                }
+            }
+            embed.addFields({ name: 'Champions', value: winnersText });
+        } else {
+            embed.setDescription("The event ended with no participants.");
+        }
+
+        await broadcastToEventsChannel(embed);
+        await dbRun('UPDATE global_events SET completed = 1 WHERE eventId = ?', [event.eventId]);
+    }
+}
+
+async function broadcastToEventsChannel(embed) {
+    const guilds = client.guilds.cache;
+    for (const [guildId, guild] of guilds) {
+        try {
+            let channel = guild.channels.cache.find(c => 
+                (c.name === 'events' || c.name === 'bot-events') && c.isTextBased()
+            );
+
+            if (!channel) {
+                // Create #events if it doesn't exist
+                try {
+                    channel = await guild.channels.create({
+                        name: 'events',
+                        type: 0, // GuildText
+                        topic: 'Global Bot Events & Announcements',
+                        reason: 'Automatic bot events channel creation'
+                    });
+                } catch (e) {
+                    // Fallback to bot-commands if creation fails
+                    channel = guild.channels.cache.find(c => 
+                        ['bot-commands', 'bot-command', 'commands'].includes(c.name.toLowerCase()) && c.isTextBased()
+                    );
+                }
+            }
+
+            if (channel) {
+                await channel.send({ embeds: [embed] }).catch(() => {});
+            }
+        } catch (err) {
+            console.error(`Failed to broadcast to guild ${guild.name}:`, err.message);
+        }
+    }
+}
+
+// ---------------------------
 // Quiz logic
 // ---------------------------
 async function getRandomQuizForUser(userId, type) {
@@ -1732,7 +1924,28 @@ client.on(Events.InteractionCreate, async interaction => {
     // 1. Handle Autocomplete immediately (no deferral needed/allowed)
     if (interaction.isAutocomplete()) {
         try {
-            const focusedValue = interaction.options.getFocused() || '';
+            const focusedOption = interaction.options.getFocused(true);
+            const focusedValue = focusedOption.value || '';
+            const { commandName } = interaction;
+
+            if (commandName === 'events' && focusedOption.name === 'type') {
+                const eventTypes = [
+                    { name: 'Tournament (Quiz Corrects)', value: 'tournament' },
+                    { name: 'PvP Showdown (Challenge Wins)', value: 'pvp_showdown' },
+                    { name: 'Quiz Rush Marathon (Rush Scores)', value: 'rush_marathon' },
+                    { name: 'Mystery Player (Guessed Players)', value: 'mystery_challenge' },
+                    { name: 'Streak King (Daily Streaks)', value: 'streak_king' },
+                    { name: 'Custom Event (Manual tracking)', value: 'custom' }
+                ];
+
+                const filtered = eventTypes
+                    .filter(t => t.name.toLowerCase().includes(focusedValue.toLowerCase()))
+                    .map(t => ({ name: t.name, value: t.value }));
+                
+                await interaction.respond(filtered.slice(0, 25)).catch(() => {});
+                return;
+            }
+
             const guildId = interaction.guildId;
             if (!guildId) return;
 
@@ -1831,7 +2044,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
                     if (win) {
                         await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [reward, guild.id, user.id]);
-                    }
+                
+                // Track Event: Quiz Rush Marathon
+                await updateEventScore(user.id, 'rush_marathon', 1);
+            }
 
                     const resultEmbed = new EmbedBuilder()
                         .setTitle(win ? "🎊 RUSH COMPLETED!" : "💀 RUSH FAILED")
@@ -1922,6 +2138,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 await addUserCoins(winnerId, challenge.bet, guild.id);
                 await addUserCoins(loserId, -challenge.bet, guild.id);
 
+                // Track Event: PvP Showdown
+                await updateEventScore(winnerId, 'pvp_showdown', 1);
+
                 const winnerUser = await client.users.fetch(winnerId);
                 const loserUser = await client.users.fetch(loserId);
 
@@ -1965,6 +2184,10 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (correct) {
                     await incQuizStat(user.id, 'correct');
                     await addUserCoins(user.id, q.reward, guild.id);
+                    
+                    // Track Event: Tournament (Quiz Corrects)
+                    await updateEventScore(user.id, 'tournament', 1);
+
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "✅ Big Brain Energy" })
                         .setTitle("Galaxy Brain!")
@@ -2203,9 +2426,161 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
     if (interaction.isChatInputCommand()) {
-        const { commandName, options } = interaction;
+        const { commandName, options, subcommandName } = interaction;
 
-                if (commandName === 'help') {
+        if (commandName === 'events') {
+            if (interaction.user.id !== '1324354578338025533') {
+                return interaction.editReply({ content: "❌ You can't use this command.", ephemeral: true });
+            }
+
+            const sub = options.getSubcommand();
+
+            if (sub === 'create') {
+                const name = options.getString('name');
+                const description = options.getString('description');
+                const type = options.getString('type');
+                const startStr = options.getString('start');
+                const endStr = options.getString('end');
+                const reward = options.getString('reward') || 'Tournament Title & Coins';
+
+                const startTime = new Date(startStr).getTime();
+                const endTime = new Date(endStr).getTime();
+
+                if (isNaN(startTime) || isNaN(endTime)) {
+                    return interaction.editReply("❌ Invalid date format. Please use YYYY-MM-DD HH:mm");
+                }
+
+                await dbRun(
+                    'INSERT INTO global_events (name, description, startTime, endTime, type, rewardData) VALUES (?, ?, ?, ?, ?, ?)',
+                    [name, description, startTime, endTime, type, reward]
+                );
+
+                return interaction.editReply(`✅ Event **${name}** has been scheduled!`);
+            }
+
+            if (sub === 'update') {
+                const id = options.getInteger('id');
+                const name = options.getString('name');
+                const description = options.getString('description');
+                const reward = options.getString('reward');
+
+                const event = await dbGet('SELECT * FROM global_events WHERE eventId = ?', [id]);
+                if (!event) return interaction.editReply(`❌ Event ID ${id} not found.`);
+
+                if (name) await dbRun('UPDATE global_events SET name = ? WHERE eventId = ?', [name, id]);
+                if (description) await dbRun('UPDATE global_events SET description = ? WHERE eventId = ?', [description, id]);
+                if (reward) await dbRun('UPDATE global_events SET rewardData = ? WHERE eventId = ?', [reward, id]);
+
+                return interaction.editReply(`✅ Event ID ${id} has been updated.`);
+            }
+
+            if (sub === 'stats') {
+                const now = Date.now();
+                const ongoingEvents = await dbAll(
+                    'SELECT * FROM global_events WHERE startTime <= ? AND endTime >= ? AND completed = 0',
+                    [now, now]
+                );
+
+                if (ongoingEvents.length === 0) return interaction.editReply("No events are currently ongoing.");
+
+                const embed = new EmbedBuilder()
+                    .setTitle("📊 Ongoing Global Event Stats")
+                    .setColor(0xF1C40F)
+                    .setTimestamp();
+
+                for (const e of ongoingEvents) {
+                    const top3 = await dbAll(
+                        'SELECT userId, score FROM event_participants WHERE eventId = ? ORDER BY score DESC LIMIT 3',
+                        [e.eventId]
+                    );
+
+                    let leaderboard = "No participants yet.";
+                    if (top3.length > 0) {
+                        leaderboard = top3.map((p, i) => {
+                            const medal = i === 0 ? "🥇" : (i === 1 ? "🥈" : "🥉");
+                            return `${medal} <@${p.userId}> — Score: **${p.score}**`;
+                        }).join('\n');
+                    }
+
+                    embed.addFields({
+                        name: `[ID: ${e.eventId}] ${e.name}`,
+                        value: `**Type:** ${e.type.replace('_', ' ').toUpperCase()}\n**Ends:** <t:${Math.floor(e.endTime / 1000)}:R>\n**Top 3 Leaders:**\n${leaderboard}`
+                    });
+                }
+
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            if (sub === 'list') {
+                const events = await dbAll('SELECT * FROM global_events WHERE completed = 0 ORDER BY startTime ASC');
+                if (events.length === 0) return interaction.editReply("No active or scheduled events.");
+
+                const embed = new EmbedBuilder()
+                    .setTitle("📅 Global Events")
+                    .setColor(0x3498DB);
+
+                events.forEach(e => {
+                    embed.addFields({
+                        name: `[ID: ${e.eventId}] ${e.name}`,
+                        value: `**Type:** ${e.type}\n**Starts:** <t:${Math.floor(e.startTime / 1000)}:f>\n**Ends:** <t:${Math.floor(e.endTime / 1000)}:f>\n**Description:** ${e.description}`
+                    });
+                });
+
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            if (sub === 'delete') {
+                const id = options.getInteger('id');
+                await dbRun('DELETE FROM global_events WHERE eventId = ?', [id]);
+                await dbRun('DELETE FROM event_participants WHERE eventId = ?', [id]);
+                return interaction.editReply(`✅ Event ID ${id} deleted.`);
+            }
+        }
+
+        if (commandName === 'say') {
+            if (interaction.user.id !== '1324354578338025533') {
+                return interaction.editReply({ content: '❌ Only the bot owner can use this command.', ephemeral: true });
+            }
+
+            const messageToBroadcast = options.getString('message');
+            // Remove mentions: user (<@ID> or <@!ID>), role (<@&ID>), channel (<#ID>)
+            const cleanMessage = messageToBroadcast.replace(/<@!?\d+>|<@&!?\d+>|<#!?\d+>/g, '[Mention Removed]');
+
+            await interaction.editReply({ content: '🚀 Broadcasting message to all servers...', ephemeral: true });
+
+            let successCount = 0;
+            let failCount = 0;
+
+            const guilds = client.guilds.cache;
+            for (const [guildId, guild] of guilds) {
+                try {
+                    // Search for "bot-commands", "bot-command", or "commands"
+                    const targetNames = ['bot-commands', 'bot-command', 'commands'];
+                    const channel = guild.channels.cache.find(c => 
+                        targetNames.includes(c.name.toLowerCase()) && 
+                        c.isTextBased()
+                    );
+                    
+                    if (channel) {
+                        await channel.send(cleanMessage);
+                        successCount++;
+                    } else {
+                        // Skip server if no matching channel is found
+                        failCount++;
+                    }
+                } catch (err) {
+                    console.error(`Failed to send message to guild ${guild.name} (${guildId}):`, err.message);
+                    failCount++;
+                }
+            }
+
+            return interaction.followUp({ 
+                content: `✅ Broadcast complete!\nSent to: **${successCount}** servers.\nSkipped/Failed: **${failCount}** servers.`, 
+                ephemeral: true 
+            });
+        }
+
+        if (commandName === 'help') {
                 const embed = new EmbedBuilder()
                     .setTitle("🤖 Ultimate Guide to @Quiz Bot")
                     .setDescription("Master standard chess terminology, dominate sports trivia, and climb the global leaderboards!")
@@ -2489,6 +2864,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guild.id, user.id]);
                 await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [totalReward, guild.id, user.id]);
                 
+                // Track Event: Streak King
+                await updateEventScore(user.id, 'streak_king', 1);
+
                 const embed = new EmbedBuilder()
                     .setTitle("💰 Daily Stipend Claimed")
                     .setDescription(`You received **${totalReward} coins**!`)
@@ -2627,6 +3005,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (correct) {
                     await addUserCoins(user.id, 10, guild.id);
+
+                    // Track Event: Mystery Player Challenge
+                    await updateEventScore(user.id, 'mystery_challenge', 1);
+
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "🎯 Target Found" })
                         .setTitle("Target Identified!")
