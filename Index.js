@@ -2684,17 +2684,8 @@ client.on(Events.InteractionCreate, async interaction => {
                         await channel.send(cleanMessage);
                         successCount++;
                     } else {
-                        // Final fallback: try to find ANY text channel the bot can send to
-                        const fallbackChannel = guild.channels.cache.find(c => 
-                            c.isTextBased() && 
-                            c.permissionsFor(guild.members.me).has('SendMessages')
-                        );
-                        if (fallbackChannel) {
-                            await fallbackChannel.send(cleanMessage);
-                            successCount++;
-                        } else {
-                            failCount++;
-                        }
+                        // Skip server if no appropriate channel is found
+                        failCount++;
                     }
                 } catch (err) {
                     console.error(`Failed to send message to guild ${guild.name} (${guildId}):`, err.message);
@@ -3585,3 +3576,4 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 client.login(DISCORD_TOKEN);
+
