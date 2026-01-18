@@ -5,9 +5,10 @@ const ADMIN_PERMS = PermissionFlagsBits.ManageRoles | PermissionFlagsBits.Manage
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 // ---------------------------
-// Load token
+// Load tokens
 // ---------------------------
 let DISCORD_TOKEN; 
 try {
@@ -15,6 +16,13 @@ try {
 } catch {
     console.error("CRITICAL: token.txt is missing!");
     process.exit(1);
+}
+
+let TOPGG_TOKEN;
+try {
+    TOPGG_TOKEN = fs.readFileSync(path.join(__dirname, 'topgg_token.txt'), 'utf8').trim();
+} catch {
+    // Silent fail, Top.gg updates just won't happen
 }
 
 // ---------------------------
@@ -1781,6 +1789,9 @@ client.once(Events.ClientReady, async () => {
         ]);
         console.log(`✅ Logged in as ${client.user.tag}`);
 
+        // Update Top.gg stats on startup
+        updateTopGGStats();
+
         // Start Global Events Checker (every 1 minute)
         setInterval(checkAndAnnounceEvents, 60000);
         checkAndAnnounceEvents(); // Initial check on startup
@@ -1788,6 +1799,10 @@ client.once(Events.ClientReady, async () => {
         console.error("Command Registration Error:", error);
     }
 });
+
+// Update Top.gg stats when joining/leaving a server
+client.on(Events.GuildCreate, () => updateTopGGStats());
+client.on(Events.GuildDelete, () => updateTopGGStats());
 
 client.on(Events.MessageCreate, async message => {
     if (message.author.bot) return;
@@ -1930,6 +1945,41 @@ async function checkAndAnnounceEvents() {
         await broadcastToEventsChannel(embed);
         await dbRun('UPDATE global_events SET completed = 1 WHERE eventId = ?', [event.eventId]);
     }
+}
+
+async function updateTopGGStats() {
+    if (!TOPGG_TOKEN) return;
+
+    const data = JSON.stringify({
+        server_count: client.guilds.cache.size
+    });
+
+    const options = {
+        hostname: 'top.gg',
+        port: 443,
+        path: `/api/bots/${client.user.id}/stats`,
+        method: 'POST',
+        headers: {
+            'Authorization': TOPGG_TOKEN,
+            'Content-Type': 'application/json',
+            'Content-Length': data.length
+        }
+    };
+
+    const req = https.request(options, (res) => {
+        if (res.statusCode === 200) {
+            console.log('✅ Top.gg server count updated successfully.');
+        } else {
+            console.error(`❌ Failed to update Top.gg stats. Status: ${res.statusCode}`);
+        }
+    });
+
+    req.on('error', (error) => {
+        console.error('❌ Error updating Top.gg stats:', error.message);
+    });
+
+    req.write(data);
+    req.end();
 }
 
 async function broadcastToEventsChannel(embed) {
@@ -3535,6 +3585,3 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 client.login(DISCORD_TOKEN);
-
-
-
