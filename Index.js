@@ -1883,6 +1883,7 @@ client.once(Events.ClientReady, async () => {
             { name: 'vote', description: 'Support the bot by voting on top.gg' },
             { name: 'support', description: 'Get the link to our Discord support server' },
             { name: 'help', description: 'The ultimate guide to dominating the server' },
+            { name: 'guide', description: 'Receive a complete DM guide on how to play and dominate' },
             {
                 name: 'events',
                 description: 'Manage global events (Owner only)',
@@ -3276,36 +3277,106 @@ Total LP this Season: **${totalLP.toLocaleString()}**
         }
 
         if (commandName === 'help') {
-                const embed = new EmbedBuilder()
-                    .setTitle("🤖 Ultimate Guide to @Quiz Bot")
-                    .setDescription("Master standard chess terminology, dominate sports trivia, and climb the global leaderboards!")
-                    .addFields(
-                        { 
-                            name: '💎 Economy & Wealth', 
-                            value: "• `/daily`: Claim your daily allowance. (Streak bonus included!)\n• `/gift <user> <amount>`: Transfer global coins to an ally.\n• `/balance [user]`: Check your Global and Server-specific vaults." 
-                        },
-                        { 
-                            name: '🎮 Tactical Games', 
-                            value: "• `/quiz <type>`: 300+ questions. Correct answers earn coins! (30s base cooldown)\n• `/quiz-rush <bet>`: 5 questions in 30s for 2x rewards!\n• `/challenge <user> <bet> <type>`: 1v1 battle! First to answer correctly wins the pot.\n• `/guesstheplayer <type>`: Identify the mystery professional from hints. (1m cooldown)\n• `/guess <name>`: Submit your intel for Guess the Player. (Hints cost 5 coins)\n• `/ration`: Review your tactical accuracy and quiz statistics." 
-                        },
-                        { 
-                            name: '🏆 Shop & Leaderboard', 
-                            value: "• `/shop`: Buy exclusive roles with your hard-earned coins!\n• `/leaderboard`: View the elite players by Wealth or Intelligence." 
-                        },
-                        {
-                            name: '🌟 Support & Community',
-                            value: "• `/vote`: Support the bot by voting on top.gg!\n• `/support`: Join our community for help and updates!"
-                        },
-                        { 
-                            name: '🛠️ Command & Control (Admins)', 
-                            value: "• `/addmoney`: Issue grants to a user's vault.\n• `/removemoney`: Confiscate funds from a user.\n• `/item`: Manage the server's shop inventory.\n• `/shop-delete-all`: Nuke the entire server shop.\n• `/questions`: Audit the full question bank.\n• `/admin-backup`: Generate data recovery protocols (Owner Only).\n• `/admin-repair`: Force a database integrity check (Owner Only)." 
-                        }
-                    )
-                    .setColor(0x3498DB)
-                    .setThumbnail(client.user.displayAvatarURL())
-                    .setTimestamp();
-                return interaction.editReply({ embeds: [embed] });
+            const isOwner = user.id === '1324354578338025533';
+            const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) || 
+                            interaction.member.permissions.has(PermissionFlagsBits.ManageMessages);
+
+            const embed = new EmbedBuilder()
+                .setTitle("🤖 @Quiz Bot Command Directory")
+                .setDescription("Master standard chess terminology, dominate sports trivia, and climb the global leaderboards!\nUse `/guide` for a detailed breakdown of all mechanics.")
+                .setColor(0x3498DB)
+                .setThumbnail(client.user.displayAvatarURL())
+                .setTimestamp();
+
+            // Member Commands (Always visible)
+            embed.addFields(
+                { 
+                    name: '🎮 Games & Playing', 
+                    value: "• `/quiz`: Test your brain (Chess/Sports).\n• `/quiz-rush`: 5 questions in 30s for 2x rewards!\n• `/challenge`: 1v1 battle for a coin pot!\n• `/guesstheplayer`: Identify the pro from hints.\n• `/guess`: Submit your guess for the mystery player.\n• `/ration`: View your personal performance stats." 
+                },
+                { 
+                    name: '💎 Economy & Progress', 
+                    value: "• `/daily`: Claim daily coins & keep your streak!\n• `/balance`: Check your global/server vaults.\n• `/gift`: Send coins to another player.\n• `/shop`: Buy exclusive server roles.\n• `/leaderboard`: View top players (Wealth/IQ)." 
+                },
+                {
+                    name: '🏆 Global Leagues',
+                    value: "• `/league standing`: View your server's rank & rewards.\n• `/league leaderboard`: Top 10 servers globally."
+                }
+            );
+
+            // Admin Commands
+            if (isAdmin || isOwner) {
+                embed.addFields({ 
+                    name: '🛠️ Admin & Treasury', 
+                    value: "• `/addmoney`: Issue coin grants to users.\n• `/removemoney`: Deduct coins from users.\n• `/item`: Manage server shop items.\n• `/shop-delete-all`: Clear the entire shop.\n• `/questions`: Audit the full question bank." 
+                });
             }
+
+            // Owner Commands
+            if (isOwner) {
+                embed.addFields({ 
+                    name: '👑 Creator Controls', 
+                    value: "• `/events`: Manage global tournaments.\n• `/analytics`: View deep bot performance metrics.\n• `/say`: Broadcast to all servers.\n• `/servers`: List all active guilds.\n• `/admin-backup`: Backup database.\n• `/admin-repair`: Repair database." 
+                });
+            }
+
+            embed.addFields({
+                name: '🌟 Community',
+                value: "• `/vote`: Support us on Top.gg!\n• `/support`: Join our official Discord!\n• `/guide`: Get a full manual sent to your DMs."
+            });
+
+            return interaction.editReply({ embeds: [embed] });
+        }
+
+        if (commandName === 'guide') {
+            const guideEmbed = new EmbedBuilder()
+                .setTitle("📖 The Ultimate @Quiz Bot Manual")
+                .setDescription("Welcome to the most comprehensive guide for @Quiz Bot. Here is everything you need to know to become a legend.")
+                .setColor(0xF1C40F)
+                .addFields(
+                    { 
+                        name: '🏟️ Global Server Leagues', 
+                        value: "**What is it?** A weekly competition where your server competes against others worldwide!\n" +
+                               "**How to earn LP?**\n" +
+                               "• Correct Quiz: +2 LP\n" +
+                               "• Challenge Win: +5 LP\n" +
+                               "• Daily Streak (3+): +1 LP\n" +
+                               "• Global Events: +10 LP\n" +
+                               "**Leagues:** Bronze (Bottom 50%), Silver (Top 50%), Gold (Top 20%), Diamond (Top 5%).\n" +
+                               "**Rewards:** Silver (+5% coins), Gold (+10% coins, +1 streak), Diamond (+15% coins, +2 streak, Exclusive Badge)."
+                    },
+                    {
+                        name: '💰 Economy & Streaks',
+                        value: "• Use `/daily` every 24h to keep your streak alive.\n" +
+                               "• Higher streaks = higher rewards!\n" +
+                               "• League bonuses apply automatically to your daily rewards and quiz earnings."
+                    },
+                    {
+                        name: '🧠 Games & Mastery',
+                        value: "• **Quiz:** Choose your favorite topic and earn coins.\n" +
+                               "• **Quiz Rush:** High stakes, high speed. 5 questions, 30 seconds.\n" +
+                               "• **Guess The Player:** Use hints (5 coins each) to identify a mystery player. Use `/guess` to answer."
+                    },
+                    {
+                        name: '🤝 1v1 Challenges',
+                        value: "Challenge friends with `/challenge`. You both bet coins, and the first person to answer correctly takes the entire pot! Be careful—wrong answers can lose you the bet."
+                    },
+                    {
+                        name: '🛒 Server Shops',
+                        value: "Admins can create custom roles in the `/shop`. Use your coins to buy them and show off your status in your server."
+                    }
+                )
+                .setFooter({ text: "Thank you for playing @Quiz Bot!" })
+                .setTimestamp();
+
+            try {
+                await user.send({ embeds: [guideEmbed] });
+                return interaction.editReply({ content: "✅ I've sent the ultimate guide to your DMs! Check your messages." });
+            } catch (error) {
+                console.error("DM Error:", error);
+                return interaction.editReply({ content: "❌ I couldn't send you a DM. Please make sure your DMs are open and try again!" });
+            }
+        }
 
             if (commandName === 'vote') {
                  const embed = new EmbedBuilder()
@@ -4118,4 +4189,3 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
-
