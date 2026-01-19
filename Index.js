@@ -106,6 +106,21 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS server_coins (guildId TEXT NOT NULL, userId TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guildId, userId))');
     db.run('CREATE TABLE IF NOT EXISTS server_shop (guildId TEXT NOT NULL, itemName TEXT NOT NULL, roleId TEXT NOT NULL, price INTEGER NOT NULL, PRIMARY KEY (guildId, itemName))');
     
+    // Server Leagues Tables
+    db.run(`CREATE TABLE IF NOT EXISTS server_leagues (
+        guildId TEXT PRIMARY KEY,
+        league TEXT DEFAULT 'Bronze',
+        leaguePoints INTEGER DEFAULT 0,
+        lastReset INTEGER DEFAULT 0
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS league_contributions (
+        guildId TEXT NOT NULL,
+        userId TEXT NOT NULL,
+        points INTEGER DEFAULT 0,
+        PRIMARY KEY (guildId, userId)
+    )`);
+    
     // Global Events Tables
     db.run(`CREATE TABLE IF NOT EXISTS global_events (
         eventId INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -237,14 +252,24 @@ const addUserCoins = async (userId, amount, guildId = null) => {
 
     // Always update global coins
     await dbRun('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId]);
-    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [finalAmount, userId]);
+    
+    // Apply League Bonus if in a guild
+    let leagueBonus = 1.0;
+    if (guildId && amount > 0) {
+        const bonus = await getLeagueBonus(guildId);
+        leagueBonus = bonus.multiplier;
+    }
+    
+    const absoluteFinalAmount = Math.floor(finalAmount * leagueBonus);
+    
+    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [absoluteFinalAmount, userId]);
     
     // If guildId is provided, also update server-specific coins
     if (guildId) {
         await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
-        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
+        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [absoluteFinalAmount, guildId, userId]);
     }
-    return finalAmount; // Return final amount in case we want to show it in the message
+    return absoluteFinalAmount; // Return final amount in case we want to show it in the message
 };
 
 const getServerUserData = async (guildId, userId) => {
@@ -286,16 +311,44 @@ const getQuizStats = async (userId) => {
     return r || { correct: 0, wrong: 0 };
 };
 
-const incQuizStat = async (userId, column, quizId = null) => {
+const incQuizStat = async (userId, column, quizId = null, guildId = null) => {
     await dbRun('INSERT OR IGNORE INTO quiz_stats (userId, correct, wrong) VALUES (?, 0, 0)', [userId]);
     
     // Analytics: Log quiz performance
     if (quizId !== null) {
         const correct = column === 'correct' ? 1 : 0;
         dbRun('INSERT INTO bot_analytics_quizzes (questionId, correct, timestamp) VALUES (?, ?, ?)', [quizId.toString(), correct, Date.now()]).catch(() => {});
+        
+        // League Points: Correct answer -> +2 LP
+        if (correct && guildId) {
+            addLeaguePoints(guildId, userId, 2).catch(() => {});
+        }
     }
 
     return dbRun(`UPDATE quiz_stats SET ${column} = ${column} + 1 WHERE userId = ?`, [userId]);
+};
+
+// ---------------------------
+// League Helpers
+// ---------------------------
+const addLeaguePoints = async (guildId, userId, points) => {
+    await dbRun('INSERT OR IGNORE INTO server_leagues (guildId, lastReset) VALUES (?, ?)', [guildId, Date.now()]);
+    await dbRun('UPDATE server_leagues SET leaguePoints = leaguePoints + ? WHERE guildId = ?', [points, guildId]);
+    
+    await dbRun('INSERT OR IGNORE INTO league_contributions (guildId, userId, points) VALUES (?, ?, 0)', [guildId, userId]);
+    await dbRun('UPDATE league_contributions SET points = points + ? WHERE guildId = ? AND userId = ?', [points, guildId, userId]);
+};
+
+const getLeagueBonus = async (guildId) => {
+    const data = await dbGet('SELECT league FROM server_leagues WHERE guildId = ?', [guildId]);
+    if (!data) return { multiplier: 1.0, streakBonus: 0 };
+    
+    switch (data.league) {
+        case 'Silver': return { multiplier: 1.05, streakBonus: 0 };
+        case 'Gold': return { multiplier: 1.10, streakBonus: 1 };
+        case 'Diamond': return { multiplier: 1.15, streakBonus: 2 };
+        default: return { multiplier: 1.0, streakBonus: 0 };
+    }
 };
 
 const getGuessActive = userId => dbGet('SELECT playerName, askedAt, hintIndex FROM guess_active WHERE userId = ?', [userId]);
@@ -331,6 +384,90 @@ const isNameMatch = (input, name) => {
     for (const t of a) { if (!b.has(t)) return false; }
     return true;
 };
+
+// ---------------------------
+// League Reset System (Weekly)
+// ---------------------------
+const runWeeklyLeagueReset = async () => {
+    console.log('🔄 Starting Global Server League Reset...');
+    try {
+        const guilds = await dbAll('SELECT * FROM server_leagues');
+        if (guilds.length === 0) return;
+
+        // Sort by points descending
+        const sorted = guilds.sort((a, b) => b.leaguePoints - a.leaguePoints);
+        const total = sorted.length;
+
+        for (let i = 0; i < total; i++) {
+            const rank = i + 1;
+            const percentile = (rank / total) * 100;
+            let newLeague = 'Bronze';
+
+            if (percentile <= 5) newLeague = 'Diamond';
+            else if (percentile <= 20) newLeague = 'Gold';
+            else if (percentile <= 50) newLeague = 'Silver';
+
+            const guildId = sorted[i].guildId;
+            const points = sorted[i].leaguePoints;
+
+            // Get top contributor
+            const topContributor = await dbGet('SELECT userId, points FROM league_contributions WHERE guildId = ? ORDER BY points DESC LIMIT 1', [guildId]);
+            
+            // Send announcement
+            const guild = client.guilds.cache.get(guildId);
+            if (guild) {
+                const channel = guild.channels.cache.find(c => 
+                    c.isTextBased() && (
+                        c.name.toLowerCase().includes('bot-command') || 
+                        c.name.toLowerCase().includes('command') ||
+                        c.name.toLowerCase().includes('bot') ||
+                        c.name.toLowerCase() === 'general'
+                    )
+                );
+
+                if (channel) {
+                    const embed = new EmbedBuilder()
+                        .setTitle('🏆 Weekly League Results')
+                        .setDescription(`The season has ended! Here is how **${guild.name}** performed:`)
+                        .addFields(
+                            { name: '🏟️ New League', value: `**${newLeague}**`, inline: true },
+                            { name: '📊 Global Rank', value: `#${rank} of ${total}`, inline: true },
+                            { name: '📈 Points Earned', value: `\`${points} LP\``, inline: true },
+                            { name: '👑 Top Contributor', value: topContributor ? `<@${topContributor.userId}> (${topContributor.points} LP)` : 'None', inline: false }
+                        )
+                        .setColor(newLeague === 'Diamond' ? 0x00FFFF : newLeague === 'Gold' ? 0xFFD700 : newLeague === 'Silver' ? 0xC0C0C0 : 0xCD7F32)
+                        .setFooter({ text: 'Next season starts now! Good luck!' })
+                        .setTimestamp();
+
+                    channel.send({ embeds: [embed] }).catch(() => {});
+                    
+                    // Reward top contributor (25 coins)
+                    if (topContributor) {
+                        addUserCoins(topContributor.userId, 25, guildId).catch(() => {});
+                    }
+                }
+            }
+
+            // Update DB
+            await dbRun('UPDATE server_leagues SET league = ?, leaguePoints = 0, lastReset = ? WHERE guildId = ?', [newLeague, Date.now(), guildId]);
+            await dbRun('DELETE FROM league_contributions WHERE guildId = ?', [guildId]);
+        }
+        console.log('✅ Weekly League Reset Complete.');
+    } catch (e) {
+        console.error('❌ Weekly League Reset Error:', e);
+    }
+};
+
+// Check for weekly reset every hour
+setInterval(async () => {
+    const lastResetRow = await dbGet('SELECT MAX(lastReset) as last FROM server_leagues');
+    const lastReset = lastResetRow?.last || 0;
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+    if (Date.now() - lastReset > sevenDays) {
+        runWeeklyLeagueReset();
+    }
+}, 3600000); // 1 hour
 
 // ---------------------------
 // Quiz Pool & Shop
@@ -1882,7 +2019,7 @@ client.on(Events.MessageCreate, async message => {
 // ---------------------------
 // Event Helper Functions
 // ---------------------------
-async function updateEventScore(userId, eventType, points = 1) {
+async function updateEventScore(userId, eventType, points = 1, guildId = null) {
     const now = Date.now();
     const activeEvents = await dbAll(
         'SELECT eventId FROM global_events WHERE type = ? AND startTime <= ? AND endTime >= ? AND completed = 0',
@@ -1894,6 +2031,11 @@ async function updateEventScore(userId, eventType, points = 1) {
             'INSERT INTO event_participants (eventId, userId, score) VALUES (?, ?, ?) ON CONFLICT(eventId, userId) DO UPDATE SET score = score + ?',
             [event.eventId, userId, points, points]
         );
+
+        // League Points: Global event completion -> +10 LP (Logged when score updated)
+        if (guildId) {
+            addLeaguePoints(guildId, userId, 10).catch(() => {});
+        }
     }
 }
 
@@ -2323,6 +2465,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 await addUserCoins(winnerId, challenge.bet, guild.id);
                 await addUserCoins(loserId, -challenge.bet, guild.id);
 
+                // League Points: Winning /challenge -> +5 LP
+                addLeaguePoints(guild.id, winnerId, 5).catch(() => {});
+
                 // Track Event: PvP Showdown
                 await updateEventScore(winnerId, 'pvp_showdown', 1);
 
@@ -2356,7 +2501,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await addQuizToHistory(user.id, q.id);
 
                 if (timedOut) {
-                    await incQuizStat(user.id, 'wrong', q.id);
+                    await incQuizStat(user.id, 'wrong', q.id, guild.id);
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "⏱️ Brain Lag" })
                         .setTitle("Time is up!")
@@ -2367,11 +2512,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 if (correct) {
-                    await incQuizStat(user.id, 'correct', q.id);
+                    await incQuizStat(user.id, 'correct', q.id, guild.id);
                     await addUserCoins(user.id, q.reward, guild.id);
                     
                     // Track Event: Tournament (Quiz Corrects)
-                    await updateEventScore(user.id, 'tournament', 1);
+                    await updateEventScore(user.id, 'tournament', 1, guild.id);
 
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "✅ Big Brain Energy" })
@@ -2381,7 +2526,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setColor(0x2ECC71);
                     await interaction.editReply({ embeds: [embed], components: [] });
                 } else {
-                    await incQuizStat(user.id, 'wrong', q.id);
+                    await incQuizStat(user.id, 'wrong', q.id, guild.id);
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "❌ Mega Oopsie" })
                         .setTitle("Terrible Attempt")
@@ -2613,7 +2758,76 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isChatInputCommand()) {
         const { commandName, options, subcommandName } = interaction;
 
-        if (commandName === 'analytics') {
+            if (commandName === 'daily') {
+                const userData = await getUserData(user.id);
+                const now = Date.now();
+                const oneDay = 24 * 60 * 60 * 1000;
+
+                if (now - userData.lastDaily < oneDay) {
+                    const remaining = oneDay - (now - userData.lastDaily);
+                    const hours = Math.floor(remaining / (1000 * 60 * 60));
+                    const mins = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                    return interaction.editReply(`⏰ You can claim your daily reward in **${hours}h ${mins}m**.`);
+                }
+
+                let newStreak = 1;
+                if (now - userData.lastDaily < oneDay * 2) {
+                    newStreak = userData.streak + 1;
+                }
+
+                // League Points: /daily streak >= 3 -> +1 LP
+                if (newStreak >= 3) {
+                    addLeaguePoints(guild.id, user.id, 1).catch(() => {});
+                }
+
+                // League Reward: Gold/Diamond get streak bonus
+                const leagueBonus = await getLeagueBonus(guild.id);
+                const bonusStreak = leagueBonus.streakBonus;
+                
+                const finalStreakForReward = newStreak + bonusStreak;
+                const reward = 25 + (finalStreakForReward * 5);
+                
+                await addUserCoins(user.id, reward, guild.id);
+                await dbRun('UPDATE users SET lastDaily = ?, streak = ? WHERE userId = ?', [now, newStreak, user.id]);
+
+                const embed = new EmbedBuilder()
+                    .setTitle("💰 Daily Reward Claimed!")
+                    .setDescription(`You received **${reward} coins**!\n🔥 Current Streak: **${newStreak}**${bonusStreak > 0 ? ` (+${bonusStreak} League Bonus)` : ''}`)
+                    .setColor(0x2ECC71)
+                    .setTimestamp();
+
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            if (commandName === 'league') {
+                const leagueData = await dbGet('SELECT * FROM server_leagues WHERE guildId = ?', [guild.id]);
+                const topContributor = await dbGet('SELECT userId, points FROM league_contributions WHERE guildId = ? ORDER BY points DESC LIMIT 1', [guild.id]);
+                
+                const league = leagueData?.league || 'Bronze';
+                const points = leagueData?.leaguePoints || 0;
+                
+                const bonus = await getLeagueBonus(guild.id);
+                const rewards = [];
+                if (bonus.multiplier > 1) rewards.push(`• +${Math.round((bonus.multiplier - 1) * 100)}% Coin Earnings`);
+                if (bonus.streakBonus > 0) rewards.push(`• +${bonus.streakBonus} Daily Streak Bonus`);
+                if (league === 'Diamond') rewards.push(`• 💎 Exclusive Diamond Badge`);
+
+                const embed = new EmbedBuilder()
+                    .setTitle(`🏆 ${guild.name} League Standing`)
+                    .setColor(league === 'Diamond' ? 0x00FFFF : league === 'Gold' ? 0xFFD700 : league === 'Silver' ? 0xC0C0C0 : 0xCD7F32)
+                    .addFields(
+                        { name: '🏟️ Current League', value: `**${league}**`, inline: true },
+                        { name: '📈 League Points', value: `\`${points} LP\``, inline: true },
+                        { name: '👑 Top Contributor', value: topContributor ? `<@${topContributor.userId}> (${topContributor.points} LP)` : 'None yet', inline: false },
+                        { name: '🎁 Active Rewards', value: rewards.length > 0 ? rewards.join('\n') : 'No rewards yet. Reach Silver to unlock!', inline: false }
+                    )
+                    .setFooter({ text: 'Leagues reset every Monday at 00:00 UTC' })
+                    .setTimestamp();
+
+                return interaction.editReply({ embeds: [embed] });
+            }
+
+            if (commandName === 'analytics') {
             if (interaction.user.id !== '1324354578338025533') {
                 return interaction.editReply({ content: "❌ You can't use this command.", ephemeral: true });
             }
@@ -2687,12 +2901,17 @@ client.on(Events.InteractionCreate, async interaction => {
                 const spamBlocked = (await dbGet('SELECT COUNT(*) as count FROM bot_analytics_security WHERE type = "spam"')).count;
                 const permErrors = (await dbGet('SELECT COUNT(*) as count FROM bot_analytics_security WHERE type = "permission"')).count;
 
-                // 8. Server Quality
+                // 9. Server Quality
                 const smallServers = client.guilds.cache.filter(g => g.memberCount < 20).size;
                 const mediumServers = client.guilds.cache.filter(g => g.memberCount >= 20 && g.memberCount < 200).size;
                 const largeServers = client.guilds.cache.filter(g => g.memberCount >= 200).size;
 
-                // 9. Insight
+                // 10. League Analytics
+                const leagueDist = await dbAll('SELECT league, COUNT(*) as count FROM server_leagues GROUP BY league');
+                const leagueDistStr = leagueDist.map(l => `• ${l.league}: **${l.count}**`).join('\n') || 'No data';
+                const totalLP = (await dbGet('SELECT SUM(leaguePoints) as total FROM server_leagues')).total || 0;
+
+                // 11. Insight
                 let insight = "Growth is accelerating with strong engagement.";
                 if (net24h < 0) insight = "Negative growth detected, check recent changes.";
                 if (active24h < active7d / 7) insight = "High server growth but low retention — onboarding issue suspected.";
@@ -2788,6 +3007,12 @@ Avg Commands/Server: \`${(totalCmdsAllTime / totalServers).toFixed(0)}\`
 
 ━━━━━━━━━━━━━━━━━━━━
 
+🏆 **LEAGUE ANALYTICS**
+${leagueDistStr}
+Total LP this Season: **${totalLP.toLocaleString()}**
+
+━━━━━━━━━━━━━━━━━━━━
+
 🔮 **INSIGHT**
 *"${insight}"*
 
@@ -2831,6 +3056,8 @@ Avg Commands/Server: \`${(totalCmdsAllTime / totalServers).toFixed(0)}\`
                     [name, description, startTime, endTime, type, reward]
                 );
 
+                // League Points: Global event completion -> +10 LP (Logged when score updated)
+                
                 return interaction.editReply(`✅ Event **${name}** has been scheduled!`);
             }
 
@@ -3431,7 +3658,7 @@ Avg Commands/Server: \`${(totalCmdsAllTime / totalServers).toFixed(0)}\`
                     await addUserCoins(user.id, 10, guild.id);
 
                     // Track Event: Mystery Player Challenge
-                    await updateEventScore(user.id, 'mystery_challenge', 1);
+                    await updateEventScore(user.id, 'mystery_challenge', 1, guild.id);
 
                     const embed = new EmbedBuilder()
                         .setAuthor({ name: "🎯 Target Found" })
