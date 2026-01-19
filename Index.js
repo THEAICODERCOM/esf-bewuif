@@ -1933,6 +1933,22 @@ client.once(Events.ClientReady, async () => {
                 ]
             },
             {
+                name: 'league',
+                description: 'View the global server league standings',
+                options: [
+                    {
+                        name: 'standing',
+                        description: 'View your server\'s current league standing and rewards',
+                        type: ApplicationCommandOptionType.Subcommand
+                    },
+                    {
+                        name: 'leaderboard',
+                        description: 'View the top 10 servers by league points',
+                        type: ApplicationCommandOptionType.Subcommand
+                    }
+                ]
+            },
+            {
                 name: 'say',
                 description: 'Broadcast a message to all servers (Owner only)',
                 default_member_permissions: '0',
@@ -2800,6 +2816,34 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             if (commandName === 'league') {
+                const sub = options.getSubcommand(false);
+
+                if (sub === 'leaderboard') {
+                    const topServers = await dbAll('SELECT * FROM server_leagues ORDER BY leaguePoints DESC LIMIT 10');
+                    
+                    const embed = new EmbedBuilder()
+                        .setTitle("🌍 Global League Leaderboard")
+                        .setDescription("Top 10 servers by League Points (LP) this season.")
+                        .setColor(0xF1C40F)
+                        .setTimestamp();
+
+                    if (topServers.length > 0) {
+                        const list = topServers.map((s, i) => {
+                            const guild = client.guilds.cache.get(s.guildId);
+                            const name = guild ? guild.name : `Unknown Server (${s.guildId})`;
+                            const medal = i === 0 ? "🥇" : (i === 1 ? "🥈" : "🥉");
+                            const rank = i > 2 ? `**#${i + 1}**` : medal;
+                            return `${rank} **${name}** — \`${s.leaguePoints} LP\` (${s.league})`;
+                        }).join('\n');
+                        embed.setDescription(list);
+                    } else {
+                        embed.setDescription("No servers have earned LP yet this season.");
+                    }
+
+                    return interaction.editReply({ embeds: [embed] });
+                }
+
+                // Default standing view (no subcommand or explicitly requested)
                 const leagueData = await dbGet('SELECT * FROM server_leagues WHERE guildId = ?', [guild.id]);
                 const topContributor = await dbGet('SELECT userId, points FROM league_contributions WHERE guildId = ? ORDER BY points DESC LIMIT 1', [guild.id]);
                 
@@ -4074,3 +4118,4 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
+
