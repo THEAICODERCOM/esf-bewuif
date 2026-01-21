@@ -4210,3 +4210,4 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
+
