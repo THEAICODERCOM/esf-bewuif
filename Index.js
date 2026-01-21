@@ -105,6 +105,7 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS guess_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS server_coins (guildId TEXT NOT NULL, userId TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guildId, userId))');
     db.run('CREATE TABLE IF NOT EXISTS server_shop (guildId TEXT NOT NULL, itemName TEXT NOT NULL, roleId TEXT NOT NULL, price INTEGER NOT NULL, PRIMARY KEY (guildId, itemName))');
+    db.run('CREATE TABLE IF NOT EXISTS admin_weekly_usage (userId TEXT PRIMARY KEY, amount INTEGER DEFAULT 0, lastReset INTEGER DEFAULT 0)');
     
     // Server Leagues Tables
     db.run(`CREATE TABLE IF NOT EXISTS server_leagues (
@@ -262,12 +263,13 @@ const addUserCoins = async (userId, amount, guildId = null) => {
     
     const absoluteFinalAmount = Math.floor(finalAmount * leagueBonus);
     
-    await dbRun('UPDATE users SET coins = coins + ? WHERE userId = ?', [absoluteFinalAmount, userId]);
+    // Apply 10k cap to both global and server coins
+    await dbRun('UPDATE users SET coins = MIN(10000, MAX(0, coins + ?)) WHERE userId = ?', [absoluteFinalAmount, userId]);
     
     // If guildId is provided, also update server-specific coins
     if (guildId) {
         await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
-        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [absoluteFinalAmount, guildId, userId]);
+        await dbRun('UPDATE server_coins SET coins = MIN(10000, MAX(0, coins + ?)) WHERE guildId = ? AND userId = ?', [absoluteFinalAmount, guildId, userId]);
     }
     return absoluteFinalAmount; // Return final amount in case we want to show it in the message
 };
@@ -305,6 +307,36 @@ const addQuizToHistory = async (userId, quizId) => {
 };
 
 const upsertGuildUser = (guildId, userId) => dbRun('INSERT OR IGNORE INTO guild_users (guildId, userId) VALUES (?, ?)', [guildId, userId]);
+
+const checkAdminWeeklyLimit = async (userId, amountToAdd) => {
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    let data = await dbGet('SELECT amount, lastReset FROM admin_weekly_usage WHERE userId = ?', [userId]);
+    
+    if (!data) {
+        if (amountToAdd > 1000) return { allowed: false, current: 0 };
+        await dbRun('INSERT INTO admin_weekly_usage (userId, amount, lastReset) VALUES (?, ?, ?)', [userId, amountToAdd, now]);
+        return { allowed: true, current: amountToAdd };
+    }
+
+    if (now - data.lastReset > oneWeek) {
+        // Reset for the new week
+        if (amountToAdd > 1000) {
+            await dbRun('UPDATE admin_weekly_usage SET amount = 0, lastReset = ? WHERE userId = ?', [now, userId]);
+            return { allowed: false, current: 0 };
+        }
+        await dbRun('UPDATE admin_weekly_usage SET amount = ?, lastReset = ? WHERE userId = ?', [amountToAdd, now, userId]);
+        return { allowed: true, current: amountToAdd };
+    }
+
+    const newTotal = data.amount + amountToAdd;
+    if (newTotal > 1000) {
+        return { allowed: false, current: data.amount };
+    }
+
+    await dbRun('UPDATE admin_weekly_usage SET amount = ? WHERE userId = ?', [newTotal, userId]);
+    return { allowed: true, current: newTotal };
+};
 
 const getQuizStats = async (userId) => {
     let r = await dbGet('SELECT correct, wrong FROM quiz_stats WHERE userId = ?', [userId]);
@@ -1828,6 +1860,11 @@ client.once(Events.ClientReady, async () => {
                 description: 'Verify database integrity and repair if possible (Owner only)',
                 default_member_permissions: '0'
             },
+            {
+                name: 'cap-wealth',
+                description: 'Cap everyone\'s money at 10k (Owner only)',
+                default_member_permissions: '0'
+            },
             { 
                 name: 'quiz', 
                 description: 'Test your brain for rewards (30s cooldown)',
@@ -1884,6 +1921,7 @@ client.once(Events.ClientReady, async () => {
             { name: 'support', description: 'Get the link to our Discord support server' },
             { name: 'help', description: 'The ultimate guide to dominating the server' },
             { name: 'guide', description: 'Receive a complete DM guide on how to play and dominate' },
+            { name: 'boosts', description: 'View all active server and personal coin boosts' },
             {
                 name: 'events',
                 description: 'Manage global events (Owner only)',
@@ -2774,6 +2812,56 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (interaction.isChatInputCommand()) {
         const { commandName, options, subcommandName } = interaction;
+
+            if (commandName === 'boosts') {
+                const leagueBonus = await getLeagueBonus(guild.id);
+                const booster = await dbGet('SELECT multiplier, expiresAt FROM active_boosters WHERE userId = ? AND expiresAt > ?', [user.id, Date.now()]);
+                const leagueData = await dbGet('SELECT league FROM server_leagues WHERE guildId = ?', [guild.id]);
+                const league = leagueData?.league || 'Bronze';
+
+                const embed = new EmbedBuilder()
+                    .setTitle("⚡ Active Boosters & Multipliers")
+                    .setDescription(`Current multipliers affecting your coin earnings in **${guild.name}**.`)
+                    .setColor(0x00FFFF)
+                    .setThumbnail('https://cdn-icons-png.flaticon.com/512/1041/1041916.png')
+                    .setTimestamp();
+
+                // 1. League Boosts
+                const leagueRewards = [];
+                if (leagueBonus.multiplier > 1) leagueRewards.push(`• **+${Math.round((leagueBonus.multiplier - 1) * 100)}%** Coin Multiplier`);
+                if (leagueBonus.streakBonus > 0) leagueRewards.push(`• **+${leagueBonus.streakBonus}** Daily Streak Bonus`);
+                
+                embed.addFields({
+                    name: `🏟️ Server League: ${league}`,
+                    value: leagueRewards.length > 0 ? leagueRewards.join('\n') : "No active rewards for this league. Reach Silver to unlock!",
+                    inline: false
+                });
+
+                // 2. Personal Boosts
+                let personalStatus = "No active personal boosters.";
+                if (booster) {
+                    const timeLeft = Math.ceil((booster.expiresAt - Date.now()) / (1000 * 60 * 60 * 24));
+                    personalStatus = `• **${booster.multiplier}x** Coin Booster\n• **Expires in:** ${timeLeft} days`;
+                }
+
+                embed.addFields({
+                    name: "👤 Personal Boosters",
+                    value: personalStatus,
+                    inline: false
+                });
+
+                // 3. Combined Total
+                let totalMult = leagueBonus.multiplier;
+                if (booster) totalMult *= booster.multiplier;
+
+                embed.addFields({
+                    name: "📊 Total Multiplier",
+                    value: `All your earnings are currently multiplied by **${totalMult.toFixed(2)}x**!`,
+                    inline: false
+                });
+
+                return interaction.editReply({ embeds: [embed] });
+            }
 
             if (commandName === 'daily') {
                 const userData = await getUserData(user.id);
@@ -4136,6 +4224,23 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 return;
             }
 
+            if (commandName === 'cap-wealth') {
+                if (user.id !== '1324354578338025533') {
+                    return interaction.editReply({ content: "❌ This is a restricted owner command." });
+                }
+
+                await dbRun('UPDATE server_coins SET coins = 10000 WHERE coins > 10000');
+                await dbRun('UPDATE users SET coins = 10000 WHERE coins > 10000');
+
+                const embed = new EmbedBuilder()
+                    .setTitle("💸 Wealth Capped Permanently")
+                    .setDescription("Everyone's wealth has been reset to **10,000 coins** (if they were above).\n\n🛡️ **Note:** A permanent cap is now in effect. No user can exceed 10,000 coins from any transaction.")
+                    .setColor(0xF1C40F)
+                    .setTimestamp();
+                
+                return interaction.editReply({ embeds: [embed] });
+            }
+
             if (commandName === 'addmoney') {
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
@@ -4147,6 +4252,12 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                     !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) &&
                     !hasTempPerm) {
                     return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
+                }
+
+                // Weekly Limit Check (1k total per week)
+                const limitCheck = await checkAdminWeeklyLimit(user.id, amount);
+                if (!limitCheck.allowed) {
+                    return interaction.editReply({ content: "❌ This is supposed to be for giveaway only. Dont put yourself above others" });
                 }
 
                 await addUserCoins(target.id, amount, guild.id);
@@ -4168,6 +4279,13 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
+
+                // Weekly Limit Check (1k total per week)
+                const limitCheck = await checkAdminWeeklyLimit(user.id, amount);
+                if (!limitCheck.allowed) {
+                    return interaction.editReply({ content: "❌ This is supposed to be for giveaway only. Dont put yourself above others" });
+                }
+
                 await addUserCoins(target.id, -amount, guild.id);
 
                 const embed = new EmbedBuilder()
@@ -4210,4 +4328,3 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
-
