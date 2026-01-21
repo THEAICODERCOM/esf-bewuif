@@ -3236,44 +3236,54 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 return interaction.editReply({ content: "❌ This is a restricted owner command." });
             }
 
-            const guilds = client.guilds.cache;
-            let serverList = "";
-            let count = 0;
+            // 1. Convert to array and sort by member count descending
+            const guildsArray = Array.from(client.guilds.cache.values()).sort((a, b) => b.memberCount - a.memberCount);
+            const totalServers = guildsArray.length;
+            const pages = Math.ceil(totalServers / 10);
 
-            for (const [guildId, guild] of guilds) {
-                count++;
-                let inviteLink = "No permission to create invite";
+            try {
+                await user.send({ content: `📜 **Detailed Server Directory**\nFound ${totalServers} servers. Sorting from biggest to smallest...` });
                 
-                // Try to find a channel to create an invite
-                const channel = guild.channels.cache.find(c => c.isTextBased() && c.permissionsFor(guild.members.me).has('CreateInstantInvite'));
-                
-                if (channel) {
-                    try {
-                        const invite = await channel.createInvite({ maxAge: 0, maxUses: 0 });
-                        inviteLink = invite.url;
-                    } catch (e) {
-                        inviteLink = "Failed to create invite";
+                for (let i = 0; i < pages; i++) {
+                    const start = i * 10;
+                    const end = start + 10;
+                    const chunk = guildsArray.slice(start, end);
+                    
+                    let serverList = "";
+                    for (let j = 0; j < chunk.length; j++) {
+                        const guild = chunk[j];
+                        const rank = start + j + 1;
+                        
+                        let inviteLink = "No permission";
+                        const channel = guild.channels.cache.find(c => c.isTextBased() && c.permissionsFor(guild.members.me).has('CreateInstantInvite'));
+                        
+                        if (channel) {
+                            try {
+                                const invite = await channel.createInvite({ maxAge: 0, maxUses: 0 });
+                                inviteLink = invite.url;
+                            } catch (e) {
+                                inviteLink = "Invite failed";
+                            }
+                        }
+
+                        serverList += `**${rank}. ${guild.name}**\nID: \`${guild.id}\` | Members: \`${guild.memberCount}\`\nLink: ${inviteLink}\n\n`;
                     }
+
+                    const embed = new EmbedBuilder()
+                        .setTitle(`🌐 Connected Servers (Page ${i + 1}/${pages})`)
+                        .setDescription(serverList || "No servers in this page.")
+                        .setColor(0x3498DB)
+                        .setFooter({ text: `Showing ${start + 1}-${Math.min(end, totalServers)} of ${totalServers} servers` })
+                        .setTimestamp();
+
+                    await user.send({ embeds: [embed] });
                 }
 
-                const line = `**${count}. ${guild.name}**\nID: \`${guildId}\` | Members: \`${guild.memberCount}\`\nLink: ${inviteLink}\n\n`;
-                
-                // Discord embed field limit is 1024, total embed 6000. 
-                // We'll use a simple followUp for long lists if needed, but for now let's use an embed.
-                if ((serverList + line).length > 3800) {
-                    serverList += "...and more (limit reached)";
-                    break;
-                }
-                serverList += line;
+                return interaction.editReply({ content: "✅ I've DMed you the ranked server list in pages!" });
+            } catch (error) {
+                console.error("Servers DM Error:", error);
+                return interaction.editReply({ content: "❌ I couldn't send you a DM. Please make sure your DMs are open and try again!" });
             }
-
-            const embed = new EmbedBuilder()
-                .setTitle(`🌐 Connected Servers (${guilds.size})`)
-                .setDescription(serverList || "No servers found.")
-                .setColor(0x3498DB)
-                .setTimestamp();
-
-            return interaction.editReply({ embeds: [embed] });
         }
 
         if (commandName === 'help') {
@@ -4189,3 +4199,4 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
+
