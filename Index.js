@@ -3236,7 +3236,10 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 return interaction.editReply({ content: "❌ This is a restricted owner command." });
             }
 
-            // 1. Convert to array and sort by member count descending
+            // 1. Acknowledge immediately to prevent timeout
+            await interaction.editReply({ content: "⏳ Fetching ranked server list and generating top invite... check your DMs!" });
+
+            // 2. Convert to array and sort by member count descending
             const guildsArray = Array.from(client.guilds.cache.values()).sort((a, b) => b.memberCount - a.memberCount);
             const totalServers = guildsArray.length;
             const itemsPerPage = 25;
@@ -3247,7 +3250,12 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 let topInvite = "No permission";
                 const topGuild = guildsArray[0];
                 if (topGuild) {
-                    const channel = topGuild.channels.cache.find(c => c.isTextBased() && c.permissionsFor(topGuild.members.me).has('CreateInstantInvite'));
+                    // Optimized: try to find a text channel where we can create an invite
+                    const channel = topGuild.channels.cache.find(c => 
+                        c.isTextBased() && 
+                        c.permissionsFor(topGuild.members.me).has('CreateInstantInvite')
+                    );
+                    
                     if (channel) {
                         try {
                             const invite = await channel.createInvite({ maxAge: 0, maxUses: 0 });
@@ -3282,7 +3290,7 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                     await user.send({ embeds: [embed] });
                 }
 
-                return interaction.editReply({ content: "✅ I've DMed you the ranked server list in pages! (Optimized for speed)" });
+                return interaction.editReply({ content: "✅ Done! All pages have been DMed." });
             } catch (error) {
                 console.error("Servers DM Error:", error);
                 return interaction.editReply({ content: "❌ I couldn't send you a DM. Please make sure your DMs are open and try again!" });
@@ -4202,6 +4210,3 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
-
-
-
