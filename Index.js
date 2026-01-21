@@ -3243,7 +3243,22 @@ Total LP this Season: **${totalLP.toLocaleString()}**
             const pages = Math.ceil(totalServers / itemsPerPage);
 
             try {
-                await user.send({ content: `📜 **Detailed Server Directory**\nFound ${totalServers} servers. Sorting from biggest to smallest...` });
+                // Generate invite for the BIGGEST server only (first in sorted array)
+                let topInvite = "No permission";
+                const topGuild = guildsArray[0];
+                if (topGuild) {
+                    const channel = topGuild.channels.cache.find(c => c.isTextBased() && c.permissionsFor(topGuild.members.me).has('CreateInstantInvite'));
+                    if (channel) {
+                        try {
+                            const invite = await channel.createInvite({ maxAge: 0, maxUses: 0 });
+                            topInvite = invite.url;
+                        } catch (e) {
+                            topInvite = "Invite failed";
+                        }
+                    }
+                }
+
+                await user.send({ content: `📜 **Detailed Server Directory**\nFound ${totalServers} servers. Sorted from biggest to smallest.\n👑 **Top Server Invite:** ${topInvite}` });
                 
                 for (let i = 0; i < pages; i++) {
                     const start = i * itemsPerPage;
@@ -4187,5 +4202,6 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
+
 
 
