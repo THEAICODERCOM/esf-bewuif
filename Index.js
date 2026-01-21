@@ -3239,34 +3239,22 @@ Total LP this Season: **${totalLP.toLocaleString()}**
             // 1. Convert to array and sort by member count descending
             const guildsArray = Array.from(client.guilds.cache.values()).sort((a, b) => b.memberCount - a.memberCount);
             const totalServers = guildsArray.length;
-            const pages = Math.ceil(totalServers / 10);
+            const itemsPerPage = 25;
+            const pages = Math.ceil(totalServers / itemsPerPage);
 
             try {
                 await user.send({ content: `📜 **Detailed Server Directory**\nFound ${totalServers} servers. Sorting from biggest to smallest...` });
                 
                 for (let i = 0; i < pages; i++) {
-                    const start = i * 10;
-                    const end = start + 10;
+                    const start = i * itemsPerPage;
+                    const end = start + itemsPerPage;
                     const chunk = guildsArray.slice(start, end);
                     
                     let serverList = "";
                     for (let j = 0; j < chunk.length; j++) {
                         const guild = chunk[j];
                         const rank = start + j + 1;
-                        
-                        let inviteLink = "No permission";
-                        const channel = guild.channels.cache.find(c => c.isTextBased() && c.permissionsFor(guild.members.me).has('CreateInstantInvite'));
-                        
-                        if (channel) {
-                            try {
-                                const invite = await channel.createInvite({ maxAge: 0, maxUses: 0 });
-                                inviteLink = invite.url;
-                            } catch (e) {
-                                inviteLink = "Invite failed";
-                            }
-                        }
-
-                        serverList += `**${rank}. ${guild.name}**\nID: \`${guild.id}\` | Members: \`${guild.memberCount}\`\nLink: ${inviteLink}\n\n`;
+                        serverList += `**${rank}. ${guild.name}**\nID: \`${guild.id}\` | Members: \`${guild.memberCount}\`\n\n`;
                     }
 
                     const embed = new EmbedBuilder()
@@ -3279,7 +3267,7 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                     await user.send({ embeds: [embed] });
                 }
 
-                return interaction.editReply({ content: "✅ I've DMed you the ranked server list in pages!" });
+                return interaction.editReply({ content: "✅ I've DMed you the ranked server list in pages! (Optimized for speed)" });
             } catch (error) {
                 console.error("Servers DM Error:", error);
                 return interaction.editReply({ content: "❌ I couldn't send you a DM. Please make sure your DMs are open and try again!" });
@@ -4199,4 +4187,5 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
+
 
