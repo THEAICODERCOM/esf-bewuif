@@ -117,6 +117,7 @@ db.serialize(() => {
     });
     db.run('PRAGMA synchronous = NORMAL;');
 
+    db.run('CREATE TABLE IF NOT EXISTS server_daily_stats (guildId TEXT PRIMARY KEY, coinsEarned INTEGER DEFAULT 0, lastReset INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS users (userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, lastDaily INTEGER DEFAULT 0, streak INTEGER DEFAULT 0)');
     db.run('CREATE TABLE IF NOT EXISTS user_quiz (userId TEXT PRIMARY KEY, quizId INTEGER NOT NULL, askedAt INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS quiz_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
@@ -258,6 +259,17 @@ const setSetting = async (key, value) => {
     await dbRun('INSERT INTO bot_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, value.toString()]);
 };
 
+const formatTimeLeft = (ms) => {
+    const hours = Math.floor(ms / (1000 * 60 * 60));
+    const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+    let parts = [];
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+    return parts.join(' ');
+};
+
 const CHALLENGES = new Map();
 
 const getUserData = async (userId) => {
@@ -269,7 +281,7 @@ const getUserData = async (userId) => {
     return r;
 };
 
-const addUserCoins = async (userId, amount, guildId = null) => {
+const addUserCoins = async (userId, amount, guildId = null, bypassServerCap = false) => {
     // Check for active multipliers (e.g. 2x coin booster)
     let finalAmount = amount;
     if (amount > 0) {
@@ -279,16 +291,6 @@ const addUserCoins = async (userId, amount, guildId = null) => {
         }
     }
 
-    // Analytics: Log economy flow
-    const logEconomy = async () => {
-        const type = finalAmount > 0 ? 'earn' : 'spend';
-        await dbRun('INSERT INTO bot_analytics_economy (type, amount, timestamp) VALUES (?, ?, ?)', [type, Math.abs(finalAmount), Date.now()]);
-    };
-    logEconomy().catch(() => {});
-
-    // Always update global coins
-    await dbRun('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId]);
-    
     // Apply League Bonus if in a guild
     let leagueBonus = 1.0;
     if (guildId && amount > 0) {
@@ -296,7 +298,46 @@ const addUserCoins = async (userId, amount, guildId = null) => {
         leagueBonus = bonus.multiplier;
     }
     
-    const absoluteFinalAmount = Math.floor(finalAmount * leagueBonus);
+    let absoluteFinalAmount = Math.floor(finalAmount * leagueBonus);
+
+    // Server-wide daily cap check (1k per day)
+    if (guildId && absoluteFinalAmount > 0 && !bypassServerCap) {
+        let serverStats = await dbGet('SELECT coinsEarned, lastReset FROM server_daily_stats WHERE guildId = ?', [guildId]);
+        const now = Date.now();
+        const oneDay = 24 * 60 * 60 * 1000;
+
+        if (!serverStats) {
+            await dbRun('INSERT INTO server_daily_stats (guildId, coinsEarned, lastReset) VALUES (?, ?, ?)', [guildId, 0, now]);
+            serverStats = { coinsEarned: 0, lastReset: now };
+        } else if (now - serverStats.lastReset >= oneDay) {
+            await dbRun('UPDATE server_daily_stats SET coinsEarned = 0, lastReset = ? WHERE guildId = ?', [now, guildId]);
+            serverStats = { coinsEarned: 0, lastReset: now };
+        }
+
+        const SERVER_CAP = 1000;
+        if (serverStats.coinsEarned >= SERVER_CAP) {
+            const timeLeft = oneDay - (now - serverStats.lastReset);
+            throw new Error(`SERVER_CAP_REACHED|${timeLeft}`);
+        }
+
+        // If this amount would exceed the cap, partial add
+        if (serverStats.coinsEarned + absoluteFinalAmount > SERVER_CAP) {
+            absoluteFinalAmount = SERVER_CAP - serverStats.coinsEarned;
+        }
+
+        // Update server stats
+        await dbRun('UPDATE server_daily_stats SET coinsEarned = coinsEarned + ? WHERE guildId = ?', [absoluteFinalAmount, guildId]);
+    }
+
+    // Analytics: Log economy flow
+    const logEconomy = async () => {
+        const type = absoluteFinalAmount > 0 ? 'earn' : 'spend';
+        await dbRun('INSERT INTO bot_analytics_economy (type, amount, timestamp) VALUES (?, ?, ?)', [type, Math.abs(absoluteFinalAmount), Date.now()]);
+    };
+    logEconomy().catch(() => {});
+
+    // Always update global coins
+    await dbRun('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId]);
     
     // Check if wealth cap is enabled
     const wealthCapEnabled = (await getSetting('wealth_cap_enabled', 'true')) === 'true';
@@ -521,7 +562,7 @@ const runWeeklyLeagueReset = async () => {
                     
                     // Reward top contributor (25 coins)
                     if (topContributor) {
-                        addUserCoins(topContributor.userId, 25, guildId).catch(() => {});
+                        addUserCoins(topContributor.userId, 25, guildId, true).catch(() => {});
                     }
                 }
             }
@@ -2220,7 +2261,7 @@ async function checkAndAnnounceEvents() {
                     }
                     else {
                         // Default coins for other types
-                        await dbRun('UPDATE users SET coins = coins + 500 WHERE userId = ?', [p.userId]);
+                        await addUserCoins(p.userId, 500, null, true);
                         rewardApplied = "500 Coins";
                     }
 
@@ -2482,7 +2523,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     const reward = win ? session.bet * 2 : 0;
 
                     if (win) {
-                        await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [reward, guild.id, user.id]);
+                        await addUserCoins(user.id, reward, guild.id);
                 
                 // Track Event: Quiz Rush Marathon
                 await updateEventScore(user.id, 'rush_marathon', 1);
@@ -3792,9 +3833,8 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 const streakBonus = Math.min((newStreak - 1) * 5, 50); // Max 50 bonus
                 const totalReward = baseReward + streakBonus;
 
-                await dbRun('UPDATE users SET coins = coins + ?, lastDaily = ?, streak = ? WHERE userId = ?', [totalReward, now, newStreak, user.id]);
-                await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guild.id, user.id]);
-                await dbRun('UPDATE server_coins SET coins = coins + ? WHERE guildId = ? AND userId = ?', [totalReward, guild.id, user.id]);
+                await dbRun('UPDATE users SET lastDaily = ?, streak = ? WHERE userId = ?', [now, newStreak, user.id]);
+                await addUserCoins(user.id, totalReward, guild.id);
                 
                 // Track Event: Streak King
                 await updateEventScore(user.id, 'streak_king', 1);
@@ -3822,8 +3862,8 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 const senderData = await getServerUserData(guild.id, user.id);
                 if (senderData.coins < amount) return interaction.editReply({ content: "❌ You don't have enough coins to gift that amount!" });
 
-                await addUserCoins(user.id, -amount, guild.id);
-                await addUserCoins(target.id, amount, guild.id);
+                await addUserCoins(user.id, -amount, guild.id, true);
+                await addUserCoins(target.id, amount, guild.id, true);
 
                 const embed = new EmbedBuilder()
                     .setTitle("🎁 Generous Gift!")
@@ -4334,7 +4374,7 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                     return interaction.editReply({ content: "❌ This is supposed to be for giveaway only. Dont put yourself above others" });
                 }
 
-                await addUserCoins(target.id, amount, guild.id);
+                await addUserCoins(target.id, amount, guild.id, true);
                 
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: "💸 Treasury Transaction" })
@@ -4360,7 +4400,7 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                     return interaction.editReply({ content: "❌ This is supposed to be for giveaway only. Dont put yourself above others" });
                 }
 
-                await addUserCoins(target.id, -amount, guild.id);
+                await addUserCoins(target.id, -amount, guild.id, true);
 
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: "💸 Treasury Transaction" })
@@ -4375,6 +4415,18 @@ Total LP this Season: **${totalLP.toLocaleString()}**
         }
 
     } catch (err) {
+        if (err.message && err.message.startsWith('SERVER_CAP_REACHED|')) {
+            const timeLeftMs = parseInt(err.message.split('|')[1]);
+            const embed = new EmbedBuilder()
+                .setTitle("⏳ Server Daily Limit")
+                .setDescription(`This server has reached its daily earning limit of **1,000 coins**.`)
+                .addFields({ name: "⏱️ Reset In", value: `**${formatTimeLeft(timeLeftMs)}**` })
+                .setFooter({ text: "Limits are per server to keep the economy balanced." })
+                .setColor(0xF1C40F);
+            
+            return interaction.editReply({ embeds: [embed], components: [] }).catch(() => {});
+        }
+
         console.error("Interaction Error:", err);
 
         // Analytics: Log command error
