@@ -129,6 +129,7 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS server_coins (guildId TEXT NOT NULL, userId TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guildId, userId))');
     db.run('CREATE TABLE IF NOT EXISTS server_shop (guildId TEXT NOT NULL, itemName TEXT NOT NULL, roleId TEXT NOT NULL, price INTEGER NOT NULL, PRIMARY KEY (guildId, itemName))');
     db.run('CREATE TABLE IF NOT EXISTS admin_weekly_usage (userId TEXT PRIMARY KEY, amount INTEGER DEFAULT 0, lastReset INTEGER DEFAULT 0)');
+    db.run('CREATE TABLE IF NOT EXISTS addmoney_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
     
     // Server Leagues Tables
     db.run(`CREATE TABLE IF NOT EXISTS server_leagues (
@@ -447,6 +448,8 @@ const setGuessHintIndex = (userId, hintIndex) => dbRun('UPDATE guess_active SET 
 const clearGuessActive = userId => dbRun('DELETE FROM guess_active WHERE userId = ?', [userId]);
 const getGuessCooldown = userId => dbGet('SELECT lastUsed FROM guess_cooldown WHERE userId = ?', [userId]);
 const setGuessCooldown = userId => dbRun('INSERT INTO guess_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()]);
+const getAddMoneyCooldown = userId => dbGet('SELECT lastUsed FROM addmoney_cooldown WHERE userId = ?', [userId]);
+const setAddMoneyCooldown = userId => dbRun('INSERT INTO addmoney_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()]);
 
 const RUSH_SESSIONS = new Map();
 
@@ -4339,6 +4342,19 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                     return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
                 }
 
+                // Command Cooldown (1 hour)
+                const cooldownRow = await getAddMoneyCooldown(user.id);
+                const ADDMONEY_COOLDOWN = 60 * 60 * 1000; // 1 hour
+                if (cooldownRow && (Date.now() - cooldownRow.lastUsed < ADDMONEY_COOLDOWN)) {
+                    const timeLeft = ADDMONEY_COOLDOWN - (Date.now() - cooldownRow.lastUsed);
+                    const embed = new EmbedBuilder()
+                        .setTitle("⏳ Treasury Cooldown")
+                        .setDescription(`You can only use the **/addmoney** command once every hour.`)
+                        .addFields({ name: "⏱️ Ready In", value: `**${formatTimeLeft(timeLeft)}**` })
+                        .setColor(0xF1C40F);
+                    return interaction.editReply({ embeds: [embed] });
+                }
+
                 // Weekly Limit Check (1k total per week)
                 const limitCheck = await checkAdminWeeklyLimit(user.id, amount);
                 if (!limitCheck.allowed) {
@@ -4377,12 +4393,20 @@ Total LP this Season: **${totalLP.toLocaleString()}**
 
                 await addUserCoins(target.id, finalAmountToAdd, guild.id);
                 await dbRun('UPDATE server_daily_stats SET coinsEarned = coinsEarned + ? WHERE guildId = ?', [finalAmountToAdd, guild.id]);
+                await setAddMoneyCooldown(user.id);
                 
+                const timeLeft = oneDay - (now - serverStats.lastReset);
+                const remainingCap = ADDMONEY_CAP - (serverStats.coinsEarned + finalAmountToAdd);
+
                 const embed = new EmbedBuilder()
                     .setAuthor({ name: "💸 Treasury Transaction" })
                     .setTitle("Funds Granted")
                     .setDescription(`An imperial grant of **${finalAmountToAdd}** coins has been issued.${finalAmountToAdd < amount ? `\n*(Amount adjusted to hit daily 10k cap)*` : ''}`)
-                    .addFields({ name: '👤 Recipient', value: `<@${target.id}>`, inline: true })
+                    .addFields(
+                        { name: '👤 Recipient', value: `<@${target.id}>`, inline: true },
+                        { name: '🏛️ Server Daily Allowance', value: `**${remainingCap.toLocaleString()}** coins left`, inline: true },
+                        { name: '⏱️ Cap Resets In', value: `**${formatTimeLeft(timeLeft)}**`, inline: true }
+                    )
                     .setColor(0x2ECC71)
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/2454/2454282.png')
                     .setTimestamp();
@@ -4444,3 +4468,4 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
+
