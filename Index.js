@@ -4330,112 +4330,42 @@ Total LP this Season: **${totalLP.toLocaleString()}**
             }
 
             if (commandName === 'addmoney') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.editReply({ content: "❌ This command is restricted to **Administrators** only." });
+                }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
 
-                // Permission check: Administrator, ManageRoles, OR temporary event permission
-                const hasTempPerm = await dbGet('SELECT 1 FROM temporary_permissions WHERE userId = ? AND permission = "addmoney" AND expiresAt > ?', [user.id, Date.now()]);
-
-                if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && 
-                    !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) &&
-                    !hasTempPerm) {
-                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
-                }
-
-                // Command Cooldown (1 hour)
-                const cooldownRow = await getAddMoneyCooldown(user.id);
-                const ADDMONEY_COOLDOWN = 60 * 60 * 1000; // 1 hour
-                if (cooldownRow && (Date.now() - cooldownRow.lastUsed < ADDMONEY_COOLDOWN)) {
-                    const timeLeft = ADDMONEY_COOLDOWN - (Date.now() - cooldownRow.lastUsed);
-                    const embed = new EmbedBuilder()
-                        .setTitle("⏳ Treasury Cooldown")
-                        .setDescription(`You can only use the **/addmoney** command once every hour.`)
-                        .addFields({ name: "⏱️ Ready In", value: `**${formatTimeLeft(timeLeft)}**` })
-                        .setColor(0xF1C40F);
-                    return interaction.editReply({ embeds: [embed] });
-                }
-
-                // Weekly Limit Check (1k total per week)
-                const limitCheck = await checkAdminWeeklyLimit(user.id, amount);
-                if (!limitCheck.allowed) {
-                    return interaction.editReply({ content: "❌ This is supposed to be for giveaway only. Dont put yourself above others" });
-                }
-
-                // Daily Server /addmoney Cap (10k per day)
-                let serverStats = await dbGet('SELECT coinsEarned, lastReset FROM server_daily_stats WHERE guildId = ?', [guild.id]);
-                const now = Date.now();
-                const oneDay = 24 * 60 * 60 * 1000;
-
-                if (!serverStats) {
-                    await dbRun('INSERT INTO server_daily_stats (guildId, coinsEarned, lastReset) VALUES (?, ?, ?)', [guild.id, 0, now]);
-                    serverStats = { coinsEarned: 0, lastReset: now };
-                } else if (now - serverStats.lastReset >= oneDay) {
-                    await dbRun('UPDATE server_daily_stats SET coinsEarned = 0, lastReset = ? WHERE guildId = ?', [now, guild.id]);
-                    serverStats = { coinsEarned: 0, lastReset: now };
-                }
-
-                const ADDMONEY_CAP = 10000;
-                if (serverStats.coinsEarned >= ADDMONEY_CAP) {
-                    const timeLeft = oneDay - (now - serverStats.lastReset);
-                    const embed = new EmbedBuilder()
-                        .setTitle("⏳ Treasury Daily Limit")
-                        .setDescription(`This server has reached its daily **/addmoney** limit of **10,000 coins**.`)
-                        .addFields({ name: "⏱️ Reset In", value: `**${formatTimeLeft(timeLeft)}**` })
-                        .setFooter({ text: "This cap only applies to /addmoney to maintain economy balance." })
-                        .setColor(0xF1C40F);
-                    return interaction.editReply({ embeds: [embed] });
-                }
-
-                let finalAmountToAdd = amount;
-                if (serverStats.coinsEarned + amount > ADDMONEY_CAP) {
-                    finalAmountToAdd = ADDMONEY_CAP - serverStats.coinsEarned;
-                }
-
-                await addUserCoins(target.id, finalAmountToAdd, guild.id);
-                await dbRun('UPDATE server_daily_stats SET coinsEarned = coinsEarned + ? WHERE guildId = ?', [finalAmountToAdd, guild.id]);
-                await setAddMoneyCooldown(user.id);
-                
-                const timeLeft = oneDay - (now - serverStats.lastReset);
-                const remainingCap = ADDMONEY_CAP - (serverStats.coinsEarned + finalAmountToAdd);
+                await addUserCoins(target.id, amount, guild.id);
 
                 const embed = new EmbedBuilder()
-                    .setAuthor({ name: "💸 Treasury Transaction" })
+                    .setAuthor({ name: "🏛️ Imperial Treasury" })
                     .setTitle("Funds Granted")
-                    .setDescription(`An imperial grant of **${finalAmountToAdd}** coins has been issued.${finalAmountToAdd < amount ? `\n*(Amount adjusted to hit daily 10k cap)*` : ''}`)
-                    .addFields(
-                        { name: '👤 Recipient', value: `<@${target.id}>`, inline: true },
-                        { name: '🏛️ Server Daily Allowance', value: `**${remainingCap.toLocaleString()}** coins left`, inline: true },
-                        { name: '⏱️ Cap Resets In', value: `**${formatTimeLeft(timeLeft)}**`, inline: true }
-                    )
+                    .setDescription(`An imperial grant of **${amount.toLocaleString()}** coins has been issued to <@${target.id}>.`)
                     .setColor(0x2ECC71)
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/2454/2454282.png')
                     .setTimestamp();
+
                 return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'removemoney') {
-                if (!interaction.member.permissions.has(PermissionFlagsBits.ManageRoles) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                    return interaction.editReply({ content: "❌ Only Administrators or users with Manage Roles can manage the treasury." });
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.editReply({ content: "❌ This command is restricted to **Administrators** only." });
                 }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
 
-                // Weekly Limit Check (1k total per week)
-                const limitCheck = await checkAdminWeeklyLimit(user.id, amount);
-                if (!limitCheck.allowed) {
-                    return interaction.editReply({ content: "❌ This is supposed to be for giveaway only. Dont put yourself above others" });
-                }
-
                 await addUserCoins(target.id, -amount, guild.id);
 
                 const embed = new EmbedBuilder()
-                    .setAuthor({ name: "💸 Treasury Transaction" })
+                    .setAuthor({ name: "🏛️ Imperial Treasury" })
                     .setTitle("Funds Revoked")
-                    .setDescription(`A penalty of **${amount}** coins has been deducted.`)
-                    .addFields({ name: '👤 Target', value: `<@${target.id}>`, inline: true })
+                    .setDescription(`A penalty of **${amount.toLocaleString()}** coins has been deducted from <@${target.id}>.`)
                     .setColor(0xE74C3C)
                     .setThumbnail('https://cdn-icons-png.flaticon.com/512/2454/2454297.png')
                     .setTimestamp();
+
                 return interaction.editReply({ embeds: [embed] });
             }
         }
@@ -4468,4 +4398,5 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
+
 
