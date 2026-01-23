@@ -109,7 +109,12 @@ db.serialize(() => {
         }
     });
 
-    db.run('PRAGMA journal_mode = WAL;');
+    db.run('PRAGMA journal_mode = WAL;', (err) => {
+        if (err) {
+            console.warn("⚠️ WAL mode failed, falling back to DELETE mode. This is common on some PaaS hosts.");
+            db.run('PRAGMA journal_mode = DELETE;');
+        }
+    });
     db.run('PRAGMA synchronous = NORMAL;');
 
     db.run('CREATE TABLE IF NOT EXISTS users (userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, lastDaily INTEGER DEFAULT 0, streak INTEGER DEFAULT 0)');
@@ -1798,6 +1803,9 @@ loadPlayers();
 // Register commands
 // ---------------------------
 client.once(Events.ClientReady, async () => {
+    const startupTime = new Date().toLocaleString();
+    console.log(`🚀 BOT ONLINE at ${startupTime}`);
+    console.log(`🤖 Logged in as ${client.user.tag}`);
     try {
         await client.application.commands.set([
             { name: 'daily', description: 'Claim your daily stipend (25+ coins)' },
@@ -2378,9 +2386,12 @@ client.on(Events.InteractionCreate, async interaction => {
             });
         }
     } catch (e) {
-        // If deferral fails, we cannot respond to this interaction.
-        // This usually happens if the bot is running twice or network is extremely laggy.
-        console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] ${e.message}`);
+        // If deferral fails, it's usually because the bot is running twice or the server is extremely slow.
+        if (e.message.includes('10062') || e.message.includes('Unknown interaction')) {
+            console.warn(`⚠️ Interaction expired before deferral. (Likely duplicate bot instances or high latency)`);
+        } else {
+            console.error(`❌ [${interaction.isButton() ? 'BUTTON' : 'COMMAND'}] ${e.message}`);
+        }
         return; 
     }
 
