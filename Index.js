@@ -128,23 +128,6 @@ db.serialize(() => {
     db.run('CREATE TABLE IF NOT EXISTS guess_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
     db.run('CREATE TABLE IF NOT EXISTS server_coins (guildId TEXT NOT NULL, userId TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (guildId, userId))');
     db.run('CREATE TABLE IF NOT EXISTS server_shop (guildId TEXT NOT NULL, itemName TEXT NOT NULL, roleId TEXT NOT NULL, price INTEGER NOT NULL, PRIMARY KEY (guildId, itemName))');
-    db.run('CREATE TABLE IF NOT EXISTS admin_weekly_usage (userId TEXT PRIMARY KEY, amount INTEGER DEFAULT 0, lastReset INTEGER DEFAULT 0)');
-    db.run('CREATE TABLE IF NOT EXISTS addmoney_cooldown (userId TEXT PRIMARY KEY, lastUsed INTEGER NOT NULL)');
-    
-    // Server Leagues Tables
-    db.run(`CREATE TABLE IF NOT EXISTS server_leagues (
-        guildId TEXT PRIMARY KEY,
-        league TEXT DEFAULT 'Bronze',
-        leaguePoints INTEGER DEFAULT 0,
-        lastReset INTEGER DEFAULT 0
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS league_contributions (
-        guildId TEXT NOT NULL,
-        userId TEXT NOT NULL,
-        points INTEGER DEFAULT 0,
-        PRIMARY KEY (guildId, userId)
-    )`);
     
     // Global Events Tables
     db.run(`CREATE TABLE IF NOT EXISTS global_events (
@@ -167,18 +150,6 @@ db.serialize(() => {
         FOREIGN KEY (eventId) REFERENCES global_events(eventId) ON DELETE CASCADE
     )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS active_boosters (
-        userId TEXT PRIMARY KEY,
-        multiplier REAL DEFAULT 2.0,
-        expiresAt INTEGER NOT NULL
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS temporary_permissions (
-        userId TEXT NOT NULL,
-        permission TEXT NOT NULL,
-        expiresAt INTEGER NOT NULL,
-        PRIMARY KEY (userId, permission)
-    )`);
 
     // Analytics Tables
     db.run('CREATE TABLE IF NOT EXISTS bot_analytics_guilds (guildId TEXT NOT NULL, action TEXT NOT NULL, timestamp INTEGER NOT NULL)');
@@ -283,28 +254,12 @@ const getUserData = async (userId) => {
 };
 
 const addUserCoins = async (userId, amount, guildId = null) => {
-    // Check for active multipliers (e.g. 2x coin booster)
     let finalAmount = amount;
-    if (amount > 0) {
-        const booster = await dbGet('SELECT multiplier FROM active_boosters WHERE userId = ? AND expiresAt > ?', [userId, Date.now()]);
-        if (booster) {
-            finalAmount = Math.floor(amount * booster.multiplier);
-        }
-    }
-
-    // Apply League Bonus if in a guild
-    let leagueBonus = 1.0;
-    if (guildId && amount > 0) {
-        const bonus = await getLeagueBonus(guildId);
-        leagueBonus = bonus.multiplier;
-    }
-    
-    let absoluteFinalAmount = Math.floor(finalAmount * leagueBonus);
 
     // Analytics: Log economy flow
     const logEconomy = async () => {
-        const type = absoluteFinalAmount > 0 ? 'earn' : 'spend';
-        await dbRun('INSERT INTO bot_analytics_economy (type, amount, timestamp) VALUES (?, ?, ?)', [type, Math.abs(absoluteFinalAmount), Date.now()]);
+        const type = finalAmount > 0 ? 'earn' : 'spend';
+        await dbRun('INSERT INTO bot_analytics_economy (type, amount, timestamp) VALUES (?, ?, ?)', [type, Math.abs(finalAmount), Date.now()]);
     };
     logEconomy().catch(() => {});
 
@@ -316,21 +271,21 @@ const addUserCoins = async (userId, amount, guildId = null) => {
 
     // Apply 10k cap to both global and server coins if enabled
     if (wealthCapEnabled) {
-        await dbRun('UPDATE users SET coins = MIN(10000, MAX(0, coins + ?)) WHERE userId = ?', [absoluteFinalAmount, userId]);
+        await dbRun('UPDATE users SET coins = MIN(10000, MAX(0, coins + ?)) WHERE userId = ?', [finalAmount, userId]);
     } else {
-        await dbRun('UPDATE users SET coins = MAX(0, coins + ?) WHERE userId = ?', [absoluteFinalAmount, userId]);
+        await dbRun('UPDATE users SET coins = MAX(0, coins + ?) WHERE userId = ?', [finalAmount, userId]);
     }
     
     // If guildId is provided, also update server-specific coins
     if (guildId) {
         await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
         if (wealthCapEnabled) {
-            await dbRun('UPDATE server_coins SET coins = MIN(10000, MAX(0, coins + ?)) WHERE guildId = ? AND userId = ?', [absoluteFinalAmount, guildId, userId]);
+            await dbRun('UPDATE server_coins SET coins = MIN(10000, MAX(0, coins + ?)) WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
         } else {
-            await dbRun('UPDATE server_coins SET coins = MAX(0, coins + ?) WHERE guildId = ? AND userId = ?', [absoluteFinalAmount, guildId, userId]);
+            await dbRun('UPDATE server_coins SET coins = MAX(0, coins + ?) WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
         }
     }
-    return absoluteFinalAmount; // Return final amount in case we want to show it in the message
+    return finalAmount;
 };
 
 const getServerUserData = async (guildId, userId) => {
@@ -367,36 +322,6 @@ const addQuizToHistory = async (userId, quizId) => {
 
 const upsertGuildUser = (guildId, userId) => dbRun('INSERT OR IGNORE INTO guild_users (guildId, userId) VALUES (?, ?)', [guildId, userId]);
 
-const checkAdminWeeklyLimit = async (userId, amountToAdd) => {
-    const now = Date.now();
-    const oneWeek = 7 * 24 * 60 * 60 * 1000;
-    let data = await dbGet('SELECT amount, lastReset FROM admin_weekly_usage WHERE userId = ?', [userId]);
-    
-    if (!data) {
-        if (amountToAdd > 1000) return { allowed: false, current: 0 };
-        await dbRun('INSERT INTO admin_weekly_usage (userId, amount, lastReset) VALUES (?, ?, ?)', [userId, amountToAdd, now]);
-        return { allowed: true, current: amountToAdd };
-    }
-
-    if (now - data.lastReset > oneWeek) {
-        // Reset for the new week
-        if (amountToAdd > 1000) {
-            await dbRun('UPDATE admin_weekly_usage SET amount = 0, lastReset = ? WHERE userId = ?', [now, userId]);
-            return { allowed: false, current: 0 };
-        }
-        await dbRun('UPDATE admin_weekly_usage SET amount = ?, lastReset = ? WHERE userId = ?', [amountToAdd, now, userId]);
-        return { allowed: true, current: amountToAdd };
-    }
-
-    const newTotal = data.amount + amountToAdd;
-    if (newTotal > 1000) {
-        return { allowed: false, current: data.amount };
-    }
-
-    await dbRun('UPDATE admin_weekly_usage SET amount = ? WHERE userId = ?', [newTotal, userId]);
-    return { allowed: true, current: newTotal };
-};
-
 const getQuizStats = async (userId) => {
     let r = await dbGet('SELECT correct, wrong FROM quiz_stats WHERE userId = ?', [userId]);
     return r || { correct: 0, wrong: 0 };
@@ -412,35 +337,12 @@ const incQuizStat = async (userId, column, quizId = null, guildId = null) => {
         
         // League Points: Correct answer -> +2 LP
         if (correct && guildId) {
-            addLeaguePoints(guildId, userId, 2).catch(() => {});
         }
     }
 
     return dbRun(`UPDATE quiz_stats SET ${column} = ${column} + 1 WHERE userId = ?`, [userId]);
 };
 
-// ---------------------------
-// League Helpers
-// ---------------------------
-const addLeaguePoints = async (guildId, userId, points) => {
-    await dbRun('INSERT OR IGNORE INTO server_leagues (guildId, lastReset) VALUES (?, ?)', [guildId, Date.now()]);
-    await dbRun('UPDATE server_leagues SET leaguePoints = leaguePoints + ? WHERE guildId = ?', [points, guildId]);
-    
-    await dbRun('INSERT OR IGNORE INTO league_contributions (guildId, userId, points) VALUES (?, ?, 0)', [guildId, userId]);
-    await dbRun('UPDATE league_contributions SET points = points + ? WHERE guildId = ? AND userId = ?', [points, guildId, userId]);
-};
-
-const getLeagueBonus = async (guildId) => {
-    const data = await dbGet('SELECT league FROM server_leagues WHERE guildId = ?', [guildId]);
-    if (!data) return { multiplier: 1.0, streakBonus: 0 };
-    
-    switch (data.league) {
-        case 'Silver': return { multiplier: 1.05, streakBonus: 0 };
-        case 'Gold': return { multiplier: 1.10, streakBonus: 1 };
-        case 'Diamond': return { multiplier: 1.15, streakBonus: 2 };
-        default: return { multiplier: 1.0, streakBonus: 0 };
-    }
-};
 
 const getGuessActive = userId => dbGet('SELECT playerName, askedAt, hintIndex FROM guess_active WHERE userId = ?', [userId]);
 const setGuessActive = (userId, playerName) => dbRun('INSERT INTO guess_active (userId, playerName, askedAt, hintIndex) VALUES (?, ?, ?, 1) ON CONFLICT(userId) DO UPDATE SET playerName=excluded.playerName, askedAt=excluded.askedAt, hintIndex=excluded.hintIndex', [userId, playerName, Date.now()]);
@@ -448,8 +350,6 @@ const setGuessHintIndex = (userId, hintIndex) => dbRun('UPDATE guess_active SET 
 const clearGuessActive = userId => dbRun('DELETE FROM guess_active WHERE userId = ?', [userId]);
 const getGuessCooldown = userId => dbGet('SELECT lastUsed FROM guess_cooldown WHERE userId = ?', [userId]);
 const setGuessCooldown = userId => dbRun('INSERT INTO guess_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()]);
-const getAddMoneyCooldown = userId => dbGet('SELECT lastUsed FROM addmoney_cooldown WHERE userId = ?', [userId]);
-const setAddMoneyCooldown = userId => dbRun('INSERT INTO addmoney_cooldown (userId, lastUsed) VALUES (?, ?) ON CONFLICT(userId) DO UPDATE SET lastUsed=excluded.lastUsed', [userId, Date.now()]);
 
 const RUSH_SESSIONS = new Map();
 
@@ -477,90 +377,6 @@ const isNameMatch = (input, name) => {
     for (const t of a) { if (!b.has(t)) return false; }
     return true;
 };
-
-// ---------------------------
-// League Reset System (Weekly)
-// ---------------------------
-const runWeeklyLeagueReset = async () => {
-    console.log('🔄 Starting Global Server League Reset...');
-    try {
-        const guilds = await dbAll('SELECT * FROM server_leagues');
-        if (guilds.length === 0) return;
-
-        // Sort by points descending
-        const sorted = guilds.sort((a, b) => b.leaguePoints - a.leaguePoints);
-        const total = sorted.length;
-
-        for (let i = 0; i < total; i++) {
-            const rank = i + 1;
-            const percentile = (rank / total) * 100;
-            let newLeague = 'Bronze';
-
-            if (percentile <= 5) newLeague = 'Diamond';
-            else if (percentile <= 20) newLeague = 'Gold';
-            else if (percentile <= 50) newLeague = 'Silver';
-
-            const guildId = sorted[i].guildId;
-            const points = sorted[i].leaguePoints;
-
-            // Get top contributor
-            const topContributor = await dbGet('SELECT userId, points FROM league_contributions WHERE guildId = ? ORDER BY points DESC LIMIT 1', [guildId]);
-            
-            // Send announcement
-            const guild = client.guilds.cache.get(guildId);
-            if (guild) {
-                const channel = guild.channels.cache.find(c => 
-                    c.isTextBased() && (
-                        c.name.toLowerCase().includes('bot-command') || 
-                        c.name.toLowerCase().includes('command') ||
-                        c.name.toLowerCase().includes('bot') ||
-                        c.name.toLowerCase() === 'general'
-                    )
-                );
-
-                if (channel) {
-                    const embed = new EmbedBuilder()
-                        .setTitle('🏆 Weekly League Results')
-                        .setDescription(`The season has ended! Here is how **${guild.name}** performed:`)
-                        .addFields(
-                            { name: '🏟️ New League', value: `**${newLeague}**`, inline: true },
-                            { name: '📊 Global Rank', value: `#${rank} of ${total}`, inline: true },
-                            { name: '📈 Points Earned', value: `\`${points} LP\``, inline: true },
-                            { name: '👑 Top Contributor', value: topContributor ? `<@${topContributor.userId}> (${topContributor.points} LP)` : 'None', inline: false }
-                        )
-                        .setColor(newLeague === 'Diamond' ? 0x00FFFF : newLeague === 'Gold' ? 0xFFD700 : newLeague === 'Silver' ? 0xC0C0C0 : 0xCD7F32)
-                        .setFooter({ text: 'Next season starts now! Good luck!' })
-                        .setTimestamp();
-
-                    channel.send({ embeds: [embed] }).catch(() => {});
-                    
-                    // Reward top contributor (25 coins)
-                    if (topContributor) {
-                        addUserCoins(topContributor.userId, 25, guildId).catch(() => {});
-                    }
-                }
-            }
-
-            // Update DB
-            await dbRun('UPDATE server_leagues SET league = ?, leaguePoints = 0, lastReset = ? WHERE guildId = ?', [newLeague, Date.now(), guildId]);
-            await dbRun('DELETE FROM league_contributions WHERE guildId = ?', [guildId]);
-        }
-        console.log('✅ Weekly League Reset Complete.');
-    } catch (e) {
-        console.error('❌ Weekly League Reset Error:', e);
-    }
-};
-
-// Check for weekly reset every hour
-setInterval(async () => {
-    const lastResetRow = await dbGet('SELECT MAX(lastReset) as last FROM server_leagues');
-    const lastReset = lastResetRow?.last || 0;
-    const sevenDays = 7 * 24 * 60 * 60 * 1000;
-
-    if (Date.now() - lastReset > sevenDays) {
-        runWeeklyLeagueReset();
-    }
-}, 3600000); // 1 hour
 
 // ---------------------------
 // Quiz Pool & Shop
@@ -1971,8 +1787,8 @@ client.once(Events.ClientReady, async () => {
             { name: 'guess', description: 'Submit your intel on the mystery person', options: [{ name: 'name', description: 'Name of the person', type: ApplicationCommandOptionType.String, required: true }] },
             { name: 'ration', description: 'View your tactical performance stats' },
             { name: 'questions', description: 'Review the chess and sports question bank (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'page', description: 'Bank page', type: ApplicationCommandOptionType.Integer, required: false }] },
-            { name: 'addmoney', description: 'Deposit coins into a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Recipient', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to deposit', type: ApplicationCommandOptionType.Integer, required: true }] },
-            { name: 'removemoney', description: 'Confiscate coins from a treasury (Admins only)', default_member_permissions: ADMIN_PERMS.toString(), options: [{ name: 'user', description: 'Target', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to seize', type: ApplicationCommandOptionType.Integer, required: true }] },
+            { name: 'addmoney', description: 'Deposit coins into a treasury', options: [{ name: 'user', description: 'Recipient', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to deposit', type: ApplicationCommandOptionType.Integer, required: true }] },
+            { name: 'removemoney', description: 'Confiscate coins from a treasury', options: [{ name: 'user', description: 'Target', type: ApplicationCommandOptionType.User, required: true }, { name: 'amount', description: 'Amount to seize', type: ApplicationCommandOptionType.Integer, required: true }] },
             {
                 name: 'quiz-rush',
                 description: 'High-speed quiz challenge: 5 questions in 30s for 2x rewards!',
@@ -1990,7 +1806,6 @@ client.once(Events.ClientReady, async () => {
             { name: 'support', description: 'Get the link to our Discord support server' },
             { name: 'help', description: 'The ultimate guide to dominating the server' },
             { name: 'guide', description: 'Receive a complete DM guide on how to play and dominate' },
-            { name: 'boosts', description: 'View all active server and personal coin boosts' },
             {
                 name: 'events',
                 description: 'Manage global events (Owner only)',
@@ -2037,22 +1852,6 @@ client.once(Events.ClientReady, async () => {
                         options: [
                             { name: 'id', description: 'Event ID', type: ApplicationCommandOptionType.Integer, required: true }
                         ]
-                    }
-                ]
-            },
-            {
-                name: 'league',
-                description: 'View the global server league standings',
-                options: [
-                    {
-                        name: 'standing',
-                        description: 'View your server\'s current league standing and rewards',
-                        type: ApplicationCommandOptionType.Subcommand
-                    },
-                    {
-                        name: 'leaderboard',
-                        description: 'View the top 10 servers by league points',
-                        type: ApplicationCommandOptionType.Subcommand
                     }
                 ]
             },
@@ -2113,7 +1912,7 @@ client.on(Events.MessageCreate, async message => {
             .addFields(
                 { 
                     name: '💎 Economy & Daily', 
-                    value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope] [category]` - View top players (Wealth or Intelligence)\n`/gift <user> <amount>` - Transfer global coins to an ally' 
+                    value: '`/daily` - Claim your daily 25 coins\n`/balance [user]` - Check your or someone else\'s coin balance\n`/leaderboard [scope] [category]` - View top players (Wealth or Intelligence)\n`/gift <user> <amount>` - Transfer global coins to an ally\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user' 
                 },
                 { 
                     name: '🎮 Games & Quizzes', 
@@ -2129,7 +1928,7 @@ client.on(Events.MessageCreate, async message => {
                 },
                 { 
                     name: '🛠️ Admin Commands', 
-                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/addmoney <user> <amount>` - Add coins to a user\n`/removemoney <user> <amount>` - Remove coins from a user\n`/questions [page]` - View the question bank\n`/admin-backup` - Generate recovery protocols (Owner Only)\n`/admin-repair` - Force a database integrity check' 
+                    value: '`/item create <name> <role> <price>` - Add a new item to the shop\n`/item edit <name> [new_name] [price] [role]` - Edit a shop item\n`/item delete <name>` - Remove an item from the shop\n`/shop-delete-all` - Clear the entire server shop\n`/questions [page]` - View the question bank\n`/admin-backup` - Generate recovery protocols (Owner Only)\n`/admin-repair` - Force a database integrity check' 
                 }
             )
             .setColor(0x3498DB)
@@ -2155,11 +1954,6 @@ async function updateEventScore(userId, eventType, points = 1, guildId = null) {
             'INSERT INTO event_participants (eventId, userId, score) VALUES (?, ?, ?) ON CONFLICT(eventId, userId) DO UPDATE SET score = score + ?',
             [event.eventId, userId, points, points]
         );
-
-        // League Points: Global event completion -> +10 LP (Logged when score updated)
-        if (guildId) {
-            addLeaguePoints(guildId, userId, 10).catch(() => {});
-        }
     }
 }
 
@@ -2209,29 +2003,20 @@ async function checkAndAnnounceEvents() {
                     const oneDay = 24 * 60 * 60 * 1000;
 
                     if (type === 'tournament') {
-                        // 2x coin booster for 1 month
-                        const expires = Date.now() + (30 * oneDay);
-                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
-                        rewardApplied = "2x Coin Booster (30 Days)";
+                        await addUserCoins(p.userId, 2000, null);
+                        rewardApplied = "2000 Coins";
                     } 
                     else if (type === 'pvp_showdown') {
-                        // 2x coin booster for 7 days + /addmoney permission
-                        const expires = Date.now() + (7 * oneDay);
-                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
-                        await dbRun('INSERT OR REPLACE INTO temporary_permissions (userId, permission, expiresAt) VALUES (?, "addmoney", ?)', [p.userId, expires]);
-                        rewardApplied = "2x Coin Booster & /addmoney Permission (7 Days)";
+                        await addUserCoins(p.userId, 1000, null);
+                        rewardApplied = "1000 Coins";
                     }
                     else if (type === 'rush_marathon') {
-                        // 2x coin booster for 3 days
-                        const expires = Date.now() + (3 * oneDay);
-                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
-                        rewardApplied = "2x Coin Booster (3 Days)";
+                        await addUserCoins(p.userId, 500, null);
+                        rewardApplied = "500 Coins";
                     }
                     else if (type === 'streak_king') {
-                        // 2x coin booster for 7 days
-                        const expires = Date.now() + (7 * oneDay);
-                        await dbRun('INSERT OR REPLACE INTO active_boosters (userId, multiplier, expiresAt) VALUES (?, 2.0, ?)', [p.userId, expires]);
-                        rewardApplied = "2x Coin Booster (7 Days)";
+                        await addUserCoins(p.userId, 1000, null);
+                        rewardApplied = "1000 Coins";
                     }
                     else {
                         // Default coins for other types
@@ -2592,9 +2377,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 await addUserCoins(winnerId, challenge.bet, guild.id);
                 await addUserCoins(loserId, -challenge.bet, guild.id);
 
-                // League Points: Winning /challenge -> +5 LP
-                addLeaguePoints(guild.id, winnerId, 5).catch(() => {});
-
                 // Track Event: PvP Showdown
                 await updateEventScore(winnerId, 'pvp_showdown', 1);
 
@@ -2885,56 +2667,6 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isChatInputCommand()) {
         const { commandName, options, subcommandName } = interaction;
 
-            if (commandName === 'boosts') {
-                const leagueBonus = await getLeagueBonus(guild.id);
-                const booster = await dbGet('SELECT multiplier, expiresAt FROM active_boosters WHERE userId = ? AND expiresAt > ?', [user.id, Date.now()]);
-                const leagueData = await dbGet('SELECT league FROM server_leagues WHERE guildId = ?', [guild.id]);
-                const league = leagueData?.league || 'Bronze';
-
-                const embed = new EmbedBuilder()
-                    .setTitle("⚡ Active Boosters & Multipliers")
-                    .setDescription(`Current multipliers affecting your coin earnings in **${guild.name}**.`)
-                    .setColor(0x00FFFF)
-                    .setThumbnail('https://cdn-icons-png.flaticon.com/512/1041/1041916.png')
-                    .setTimestamp();
-
-                // 1. League Boosts
-                const leagueRewards = [];
-                if (leagueBonus.multiplier > 1) leagueRewards.push(`• **+${Math.round((leagueBonus.multiplier - 1) * 100)}%** Coin Multiplier`);
-                if (leagueBonus.streakBonus > 0) leagueRewards.push(`• **+${leagueBonus.streakBonus}** Daily Streak Bonus`);
-                
-                embed.addFields({
-                    name: `🏟️ Server League: ${league}`,
-                    value: leagueRewards.length > 0 ? leagueRewards.join('\n') : "No active rewards for this league. Reach Silver to unlock!",
-                    inline: false
-                });
-
-                // 2. Personal Boosts
-                let personalStatus = "No active personal boosters.";
-                if (booster) {
-                    const timeLeft = Math.ceil((booster.expiresAt - Date.now()) / (1000 * 60 * 60 * 24));
-                    personalStatus = `• **${booster.multiplier}x** Coin Booster\n• **Expires in:** ${timeLeft} days`;
-                }
-
-                embed.addFields({
-                    name: "👤 Personal Boosters",
-                    value: personalStatus,
-                    inline: false
-                });
-
-                // 3. Combined Total
-                let totalMult = leagueBonus.multiplier;
-                if (booster) totalMult *= booster.multiplier;
-
-                embed.addFields({
-                    name: "📊 Total Multiplier",
-                    value: `All your earnings are currently multiplied by **${totalMult.toFixed(2)}x**!`,
-                    inline: false
-                });
-
-                return interaction.editReply({ embeds: [embed] });
-            }
-
             if (commandName === 'daily') {
                 const userData = await getUserData(user.id);
                 const now = Date.now();
@@ -2952,85 +2684,20 @@ client.on(Events.InteractionCreate, async interaction => {
                     newStreak = userData.streak + 1;
                 }
 
-                // League Points: /daily streak >= 3 -> +1 LP
-                if (newStreak >= 3) {
-                    addLeaguePoints(guild.id, user.id, 1).catch(() => {});
-                }
-
-                // League Reward: Gold/Diamond get streak bonus
-                const leagueBonus = await getLeagueBonus(guild.id);
-                const bonusStreak = leagueBonus.streakBonus;
-                
-                const finalStreakForReward = newStreak + bonusStreak;
-                const reward = 25 + (finalStreakForReward * 5);
+                const reward = 25 + (newStreak * 5);
                 
                 await addUserCoins(user.id, reward, guild.id);
                 await dbRun('UPDATE users SET lastDaily = ?, streak = ? WHERE userId = ?', [now, newStreak, user.id]);
 
                 const embed = new EmbedBuilder()
                     .setTitle("💰 Daily Reward Claimed!")
-                    .setDescription(`You received **${reward} coins**!\n🔥 Current Streak: **${newStreak}**${bonusStreak > 0 ? ` (+${bonusStreak} League Bonus)` : ''}`)
+                    .setDescription(`You received **${reward} coins**!\n🔥 Current Streak: **${newStreak}**`)
                     .setColor(0x2ECC71)
                     .setTimestamp();
 
                 return interaction.editReply({ embeds: [embed] });
             }
 
-            if (commandName === 'league') {
-                const sub = options.getSubcommand(false);
-
-                if (sub === 'leaderboard') {
-                    const topServers = await dbAll('SELECT * FROM server_leagues ORDER BY leaguePoints DESC LIMIT 10');
-                    
-                    const embed = new EmbedBuilder()
-                        .setTitle("🌍 Global League Leaderboard")
-                        .setDescription("Top 10 servers by League Points (LP) this season.")
-                        .setColor(0xF1C40F)
-                        .setTimestamp();
-
-                    if (topServers.length > 0) {
-                        const list = topServers.map((s, i) => {
-                            const guild = client.guilds.cache.get(s.guildId);
-                            const name = guild ? guild.name : `Unknown Server (${s.guildId})`;
-                            const medal = i === 0 ? "🥇" : (i === 1 ? "🥈" : "🥉");
-                            const rank = i > 2 ? `**#${i + 1}**` : medal;
-                            return `${rank} **${name}** — \`${s.leaguePoints} LP\` (${s.league})`;
-                        }).join('\n');
-                        embed.setDescription(list);
-                    } else {
-                        embed.setDescription("No servers have earned LP yet this season.");
-                    }
-
-                    return interaction.editReply({ embeds: [embed] });
-                }
-
-                // Default standing view (no subcommand or explicitly requested)
-                const leagueData = await dbGet('SELECT * FROM server_leagues WHERE guildId = ?', [guild.id]);
-                const topContributor = await dbGet('SELECT userId, points FROM league_contributions WHERE guildId = ? ORDER BY points DESC LIMIT 1', [guild.id]);
-                
-                const league = leagueData?.league || 'Bronze';
-                const points = leagueData?.leaguePoints || 0;
-                
-                const bonus = await getLeagueBonus(guild.id);
-                const rewards = [];
-                if (bonus.multiplier > 1) rewards.push(`• +${Math.round((bonus.multiplier - 1) * 100)}% Coin Earnings`);
-                if (bonus.streakBonus > 0) rewards.push(`• +${bonus.streakBonus} Daily Streak Bonus`);
-                if (league === 'Diamond') rewards.push(`• 💎 Exclusive Diamond Badge`);
-
-                const embed = new EmbedBuilder()
-                    .setTitle(`🏆 ${guild.name} League Standing`)
-                    .setColor(league === 'Diamond' ? 0x00FFFF : league === 'Gold' ? 0xFFD700 : league === 'Silver' ? 0xC0C0C0 : 0xCD7F32)
-                    .addFields(
-                        { name: '🏟️ Current League', value: `**${league}**`, inline: true },
-                        { name: '📈 League Points', value: `\`${points} LP\``, inline: true },
-                        { name: '👑 Top Contributor', value: topContributor ? `<@${topContributor.userId}> (${topContributor.points} LP)` : 'None yet', inline: false },
-                        { name: '🎁 Active Rewards', value: rewards.length > 0 ? rewards.join('\n') : 'No rewards yet. Reach Silver to unlock!', inline: false }
-                    )
-                    .setFooter({ text: 'Leagues reset every Monday at 00:00 UTC' })
-                    .setTimestamp();
-
-                return interaction.editReply({ embeds: [embed] });
-            }
 
             if (commandName === 'analytics') {
             if (interaction.user.id !== '1324354578338025533') {
@@ -3110,11 +2777,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 const smallServers = client.guilds.cache.filter(g => g.memberCount < 20).size;
                 const mediumServers = client.guilds.cache.filter(g => g.memberCount >= 20 && g.memberCount < 200).size;
                 const largeServers = client.guilds.cache.filter(g => g.memberCount >= 200).size;
-
-                // 10. League Analytics
-                const leagueDist = await dbAll('SELECT league, COUNT(*) as count FROM server_leagues GROUP BY league');
-                const leagueDistStr = leagueDist.map(l => `• ${l.league}: **${l.count}**`).join('\n') || 'No data';
-                const totalLP = (await dbGet('SELECT SUM(leaguePoints) as total FROM server_leagues')).total || 0;
 
                 // 11. Insight
                 let insight = "Growth is accelerating with strong engagement.";
@@ -3212,12 +2874,6 @@ Avg Commands/Server: \`${(totalCmdsAllTime / totalServers).toFixed(0)}\`
 
 ━━━━━━━━━━━━━━━━━━━━
 
-🏆 **LEAGUE ANALYTICS**
-${leagueDistStr}
-Total LP this Season: **${totalLP.toLocaleString()}**
-
-━━━━━━━━━━━━━━━━━━━━
-
 🔮 **INSIGHT**
 *"${insight}"*
 
@@ -3261,8 +2917,6 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                     [name, description, startTime, endTime, type, reward]
                 );
 
-                // League Points: Global event completion -> +10 LP (Logged when score updated)
-                
                 return interaction.editReply(`✅ Event **${name}** has been scheduled!`);
             }
 
@@ -3477,19 +3131,15 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 },
                 { 
                     name: '💎 Economy & Progress', 
-                    value: "• `/daily`: Claim daily coins & keep your streak!\n• `/balance`: Check your global/server vaults.\n• `/gift`: Send coins to another player.\n• `/shop`: Buy exclusive server roles.\n• `/leaderboard`: View top players (Wealth/IQ)." 
-                },
-                {
-                    name: '🏆 Global Leagues',
-                    value: "• `/league standing`: View your server's rank & rewards.\n• `/league leaderboard`: Top 10 servers globally."
+                    value: "• `/daily`: Claim daily coins & keep your streak!\n• `/balance`: Check your global/server vaults.\n• `/gift`: Send coins to another player.\n• `/shop`: Buy exclusive server roles.\n• `/leaderboard`: View top players (Wealth/IQ).\n• `/addmoney`: Issue coin grants to users.\n• `/removemoney`: Deduct coins from users." 
                 }
             );
 
             // Admin Commands
             if (isAdmin || isOwner) {
                 embed.addFields({ 
-                    name: '🛠️ Admin & Treasury', 
-                    value: "• `/addmoney`: Issue coin grants to users.\n• `/removemoney`: Deduct coins from users.\n• `/item`: Manage server shop items.\n• `/shop-delete-all`: Clear the entire shop.\n• `/questions`: Audit the full question bank." 
+                    name: '🛠️ Admin Tools', 
+                    value: "• `/item`: Manage server shop items.\n• `/shop-delete-all`: Clear the entire shop.\n• `/questions`: Audit the full question bank." 
                 });
             }
 
@@ -3515,22 +3165,11 @@ Total LP this Season: **${totalLP.toLocaleString()}**
                 .setDescription("Welcome to the most comprehensive guide for @Quiz Bot. Here is everything you need to know to become a legend.")
                 .setColor(0xF1C40F)
                 .addFields(
-                    { 
-                        name: '🏟️ Global Server Leagues', 
-                        value: "**What is it?** A weekly competition where your server competes against others worldwide!\n" +
-                               "**How to earn LP?**\n" +
-                               "• Correct Quiz: +2 LP\n" +
-                               "• Challenge Win: +5 LP\n" +
-                               "• Daily Streak (3+): +1 LP\n" +
-                               "• Global Events: +10 LP\n" +
-                               "**Leagues:** Bronze (Bottom 50%), Silver (Top 50%), Gold (Top 20%), Diamond (Top 5%).\n" +
-                               "**Rewards:** Silver (+5% coins), Gold (+10% coins, +1 streak), Diamond (+15% coins, +2 streak, Exclusive Badge)."
-                    },
                     {
                         name: '💰 Economy & Streaks',
                         value: "• Use `/daily` every 24h to keep your streak alive.\n" +
                                "• Higher streaks = higher rewards!\n" +
-                               "• League bonuses apply automatically to your daily rewards and quiz earnings."
+                               "• Use `/addmoney` and `/removemoney` to manage server wealth."
                     },
                     {
                         name: '🧠 Games & Mastery',
@@ -4330,9 +3969,6 @@ Total LP this Season: **${totalLP.toLocaleString()}**
             }
 
             if (commandName === 'addmoney') {
-                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-                    return interaction.editReply({ content: "❌ This command is restricted to **Administrators** only." });
-                }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
 
@@ -4350,9 +3986,6 @@ Total LP this Season: **${totalLP.toLocaleString()}**
             }
 
             if (commandName === 'removemoney') {
-                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-                    return interaction.editReply({ content: "❌ This command is restricted to **Administrators** only." });
-                }
                 const target = options.getUser('user');
                 const amount = options.getInteger('amount');
 
@@ -4398,5 +4031,3 @@ Total LP this Season: **${totalLP.toLocaleString()}**
     }
 });
 client.login(DISCORD_TOKEN);
-
-
