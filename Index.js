@@ -40,32 +40,51 @@ function resolveDatabasePath() {
 
 const dbPath = resolveDatabasePath();
 
-// Function to handle database corruption
-function handleDatabaseCorruption() {
-    console.error("⚠️ CRITICAL: Database corruption detected! Attempting recovery...");
+// Function to handle database corruption or I/O errors
+function handleDatabaseError(err) {
+    if (err && err.message.includes('SQLITE_CORRUPT')) {
+        console.error("⚠️ CRITICAL: Database corruption detected! Attempting recovery...");
+    } else if (err && err.message.includes('SQLITE_IOERR')) {
+        console.error("⚠️ CRITICAL: Disk I/O Error detected! This usually means permissions are wrong or the disk is full.");
+        console.error("👉 TRY: Run 'sudo chown -R $USER:$USER .' and check 'df -h'");
+    } else {
+        console.error("⚠️ Database Error:", err.message);
+    }
+
     const timestamp = Date.now();
-    const backupPath = `${dbPath}.corrupt.${timestamp}`;
+    const backupPath = `${dbPath}.error.${timestamp}`;
     
     try {
         if (fs.existsSync(dbPath)) {
             fs.renameSync(dbPath, backupPath);
-            console.log(`✅ Corrupted database moved to: ${backupPath}`);
+            console.log(`✅ Problematic database moved to: ${backupPath}`);
         }
     } catch (e) {
-        console.error("❌ Failed to move corrupted database:", e);
+        console.error("❌ Failed to move database file:", e);
     }
 }
 
 let db;
 try {
+    // Check directory permissions before opening DB
+    try {
+        const testFile = path.join(__dirname, '.permcheck');
+        fs.writeFileSync(testFile, 'test');
+        fs.unlinkSync(testFile);
+    } catch (e) {
+        console.error("❌ CRITICAL ERROR: The bot directory is NOT writable!");
+        console.error("This will cause SQLITE_IOERR. Run: sudo chown -R $USER:$USER " + __dirname);
+        process.exit(1);
+    }
+
     db = new sqlite3.Database(dbPath, (err) => {
-        if (err && err.message.includes('SQLITE_CORRUPT')) {
-            handleDatabaseCorruption();
+        if (err && (err.message.includes('SQLITE_CORRUPT') || err.message.includes('SQLITE_IOERR'))) {
+            handleDatabaseError(err);
             db = new sqlite3.Database(dbPath);
         }
     });
 } catch (e) {
-    handleDatabaseCorruption();
+    handleDatabaseError(e);
     db = new sqlite3.Database(dbPath);
 }
 
@@ -73,11 +92,9 @@ db.configure('busyTimeout', 5000);
 
 // Add error listener for runtime corruption
 db.on('error', (err) => {
-    if (err && err.message.includes('SQLITE_CORRUPT')) {
-        console.error("⚠️ Runtime Database Corruption Detected!");
-        // We can't easily recover mid-runtime without restarting, 
-        // but we can log it and exit to let the process manager (pm2/etc) restart us
-        handleDatabaseCorruption();
+    if (err && (err.message.includes('SQLITE_CORRUPT') || err.message.includes('SQLITE_IOERR'))) {
+        console.error("⚠️ Runtime Database Error Detected!");
+        handleDatabaseError(err);
         process.exit(1);
     }
 });
@@ -86,7 +103,7 @@ db.serialize(() => {
     // Initial Integrity Check
     db.get('PRAGMA integrity_check', (err, row) => {
         if (err || (row && row.integrity_check !== 'ok')) {
-            handleDatabaseCorruption();
+            handleDatabaseError(err);
             // Force a restart to re-initialize everything safely
             process.exit(1);
         }
@@ -198,8 +215,8 @@ db.serialize(() => {
 // DB Helpers
 // ---------------------------
 const checkCorrupt = (err) => {
-    if (err && err.message.includes('SQLITE_CORRUPT')) {
-        handleDatabaseCorruption();
+    if (err && (err.message.includes('SQLITE_CORRUPT') || err.message.includes('SQLITE_IOERR'))) {
+        handleDatabaseError(err);
         // Exit so process manager can restart with fresh DB
         process.exit(1);
     }
