@@ -266,24 +266,13 @@ const addUserCoins = async (userId, amount, guildId = null) => {
     // Always update global coins
     await dbRun('INSERT OR IGNORE INTO users (userId, coins) VALUES (?,0)', [userId]);
     
-    // Check if wealth cap is enabled
-    const wealthCapEnabled = (await getSetting('wealth_cap_enabled', 'true')) === 'true';
-
-    // Apply 10k cap to both global and server coins if enabled
-    if (wealthCapEnabled) {
-        await dbRun('UPDATE users SET coins = MIN(10000, MAX(0, coins + ?)) WHERE userId = ?', [finalAmount, userId]);
-    } else {
-        await dbRun('UPDATE users SET coins = MAX(0, coins + ?) WHERE userId = ?', [finalAmount, userId]);
-    }
+    // Wealth cap logic removed as requested by user
+    await dbRun('UPDATE users SET coins = MAX(0, coins + ?) WHERE userId = ?', [finalAmount, userId]);
     
     // If guildId is provided, also update server-specific coins
     if (guildId) {
         await dbRun('INSERT OR IGNORE INTO server_coins (guildId, userId, coins) VALUES (?, ?, 0)', [guildId, userId]);
-        if (wealthCapEnabled) {
-            await dbRun('UPDATE server_coins SET coins = MIN(10000, MAX(0, coins + ?)) WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
-        } else {
-            await dbRun('UPDATE server_coins SET coins = MAX(0, coins + ?) WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
-        }
+        await dbRun('UPDATE server_coins SET coins = MAX(0, coins + ?) WHERE guildId = ? AND userId = ?', [finalAmount, guildId, userId]);
     }
     return finalAmount;
 };
@@ -1738,16 +1727,6 @@ client.once(Events.ClientReady, async () => {
             {
                 name: 'admin-repair',
                 description: 'Verify database integrity and repair if possible (Owner only)',
-                default_member_permissions: '0'
-            },
-            {
-                name: 'cap-wealth',
-                description: 'Cap everyone\'s money at 10k (Owner only)',
-                default_member_permissions: '0'
-            },
-            {
-                name: 'uncap-wealth',
-                description: 'Remove the 10k wealth cap (Owner only)',
                 default_member_permissions: '0'
             },
             { 
@@ -3932,40 +3911,6 @@ Avg Commands/Server: \`${(totalCmdsAllTime / totalServers).toFixed(0)}\`
                     }
                 });
                 return;
-            }
-
-            if (commandName === 'cap-wealth') {
-                if (user.id !== '1324354578338025533') {
-                    return interaction.editReply({ content: "❌ This is a restricted owner command." });
-                }
-
-                await setSetting('wealth_cap_enabled', 'true');
-                await dbRun('UPDATE server_coins SET coins = 10000 WHERE coins > 10000');
-                await dbRun('UPDATE users SET coins = 10000 WHERE coins > 10000');
-
-                const embed = new EmbedBuilder()
-                    .setTitle("💸 Wealth Capped Permanently")
-                    .setDescription("Everyone's wealth has been reset to **10,000 coins** (if they were above).\n\n🛡️ **Note:** A permanent cap is now in effect. No user can exceed 10,000 coins from any transaction.")
-                    .setColor(0xF1C40F)
-                    .setTimestamp();
-                
-                return interaction.editReply({ embeds: [embed] });
-            }
-
-            if (commandName === 'uncap-wealth') {
-                if (user.id !== '1324354578338025533') {
-                    return interaction.editReply({ content: "❌ This is a restricted owner command." });
-                }
-
-                await setSetting('wealth_cap_enabled', 'false');
-
-                const embed = new EmbedBuilder()
-                    .setTitle("🔓 Wealth Uncapped")
-                    .setDescription("The **10,000 coin cap** has been removed.\n\n🚀 **Note:** Users can now exceed 10,000 coins in all transactions.")
-                    .setColor(0x2ECC71)
-                    .setTimestamp();
-                
-                return interaction.editReply({ embeds: [embed] });
             }
 
             if (commandName === 'addmoney') {
